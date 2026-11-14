@@ -1,0 +1,11 @@
+{
+  "id": "GDT_Archipelago",
+  "name": "Archipelago Multiworld",
+  "version": "1.0.0",
+  "author": "SoT_Rando",
+  "description": "Connects Game Dev Tycoon to an Archipelago Multiworld server via WebSocket.",
+  "main": "./archipelago.js",
+  "dependencies": {
+    "gdt-modAPI": "0.1.x"
+  }
+}
