@@ -12,6 +12,11 @@ FRIEND_BASE = 20000    # friend id = 20000 + index in FRIEND_LIST (matches the C
 PROGRESSION_POOLS = {"QuestEntryKey", "QuestItem", "QuestTier1", "QuestTier2"}
 USEFUL_POOLS = {"Chinpokomon", "Weapon", "Armor", "StrapOrPatch"}
 
+# The 12 class weapons (Warrior / Jew / Mage / Thief, tiers 1-3). The game hands these out around the
+# Clyde tutorial and then removes the tutorial weapon. If they are shuffled the player can end up with
+# no weapon (soft lock), so they always stay vanilla.
+ALWAYS_VANILLA_ITEM_INDICES = {917, 918, 919, 927, 928, 929, 937, 938, 939, 947, 948, 949}
+
 # Items the region rules / goal actually depend on. Only these are marked progression.
 LOGIC_ITEMS = {
     "Community Center Key", "4th Grade Classroom Key",
@@ -32,7 +37,9 @@ def _load() -> List[ItemData]:
     rules = json.loads(raw.decode("utf-8-sig"))
     # Only unique, non-excluded blueprints can be 1-of-1 locations.
     # Consumables/junk are not unique, so they cannot be distinct checks.
-    items = [i for i in rules["Items"] if i["IsUnique"] and not i["Excluded"]]
+    items = [i for i in rules["Items"]
+             if i["IsUnique"] and not i["Excluded"]
+             and i["ItemIndex"] not in ALWAYS_VANILLA_ITEM_INDICES]
     counts = Counter(i["Name"] for i in items)
     out = []
     for i in items:

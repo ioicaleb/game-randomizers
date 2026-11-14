@@ -22,9 +22,9 @@ namespace SoT
 
     class Program
     {
-        static readonly string ExtractedFolder = "/mnt/E8A2D79FA2D77114/Source/repos/SoT_Rando/SoT";
+        static readonly string ExtractedFolder = "/mnt/E8A2D79FA2D77114/Source/repos/GameRandomizers/Unpacked Games/SoT";
         static readonly string GameDir = "/mnt/E8A2D79FA2D77114/SteamLibrary/steamapps/common/South Park - The Stick of Truth";
-
+        static readonly HashSet<int> AlwaysVanilla = new() { 917,918,919, 927,928,929, 937,938,939, 947,948,949 };
         static readonly string[] FriendList = {
             "friend_tweek", "friend_token", "friend_craig", "friend_barbrady",
             "friend_bartender", "friend_beary", "friend_big_gay_al", "friend_bill",
@@ -189,76 +189,96 @@ namespace SoT
             using FileStream mem = new FileStream($"/proc/{gamePid}/mem", FileMode.Open, FileAccess.ReadWrite);
             byte[] pageBuf = new byte[4096];
 
+            // ---- ARMING: wait until the save is loaded, then snapshot what already exists ----
+            Console.WriteLine("Load your save and wait until you can walk around in-game.");
+            Console.WriteLine("Then press ENTER here to arm the tracker (anything already owned is ignored).");
+            Console.ReadLine();
+            if (!Directory.Exists($"/proc/{gamePid}")) return;
+
+            var bagHits = new Dictionary<uint, (long addr, int qty)>();
+            var friendHits = new HashSet<uint>();
+            ScanMemory(mem, gamePid, pageBuf, blueprintHashToLocations, friendHashToId, bagHits, friendHits);
+
+            var bagBaseline = new HashSet<uint>(bagHits.Keys);
+            // Friends unlocked before arming, plus any friend we inject from AP, are never reported as checks.
+            var friendIgnore = new HashSet<uint>(friendHits);
+            var bagStreak = new Dictionary<uint, int>();
+            var friendStreak = new Dictionary<uint, int>();
+            const int ConfirmScans = 3;
+
+            Console.WriteLine($"[ARMED] Baseline: {bagBaseline.Count} bag hashes, {friendIgnore.Count} friends already unlocked (ignored).");
+            Console.WriteLine("Tip: press D at any time to write a memory dump (dump_*.txt) for debugging.\n");
+
             while (Directory.Exists($"/proc/{gamePid}"))
             {
-                foreach (var (start, end) in WritableRegions(gamePid))
+                try
                 {
-                    if (start >= 0x7F0000000000L) continue;
-
-                    for (long addr = start; addr < end; addr += 4096)
+                    var key = Console.ReadKey(true).Key;
+                    if (key == ConsoleKey.D)
                     {
-                        try
-                        {
-                            mem.Seek(addr, SeekOrigin.Begin);
-                            int read = mem.Read(pageBuf, 0, 4096);
-                            for (int off = 0; off <= read - 16; off += 4)
-                            {
-                                uint val = BitConverter.ToUInt32(pageBuf, off);
-
-                                // 1. Detect Master Friend Table entries (0x10 stride, +0x04 == 1)
-                                if (friendHashToId.TryGetValue(val, out string? fId))
-                                {
-                                    int f1 = BitConverter.ToInt32(pageBuf, off + 4);
-                                    int f2 = BitConverter.ToInt32(pageBuf, off + 8);
-                                    int p3 = BitConverter.ToInt32(pageBuf, off + 12);
-                                    if ((f1 == 0 || f1 == 1) && (f2 == 0 || f2 == 1) && p3 == 0)
-                                                            {
-                                    if (f1 == 1 && seenFriendHashes.Add(val))
-                                    {
-                                        int fIdx = Array.FindIndex(FriendList, x => x.Equals(fId, StringComparison.OrdinalIgnoreCase));
-                                        if (fIdx >= 0)
-                                        {
-                                            long locId = 20000 + fIdx;
-                                            if (checkedLocations.Add(locId))
-                                            {
-                                                Console.WriteLine($"[SEND CHECK] Friend Request Unlocked: {fId} -> Location ID {locId}");
-                                                session.Locations.CompleteLocationChecks(locId);
-                                            }
-                                        }
-                                    }
-                                  }
-                                }
-                                // 2. Detect newly looted items in the Active Save Vector: (slotHash, qty 1..99)
-                                // Exclude vtable 0x00BE177C template objects by checking that off >= 24 and prev uint != 0x00BE177C
-                                if (blueprintHashToLocations.TryGetValue(val, out var locIds))
-                                {
-                                    int countVal = BitConverter.ToInt32(pageBuf, off + 4);
-                                    uint maybeVtable = (off >= 24) ? BitConverter.ToUInt32(pageBuf, off - 24) : 0;
-                                    if (maybeVtable != 0x00BE177C && countVal >= 1 && countVal <= 99 && seenBagHashes.Add(val))
-                                    {
-                                        foreach (long locId in locIds)
-                                        {
-                                            if (checkedLocations.Add(locId))
-                                            {
-                                                Console.WriteLine($"[SEND CHECK] Chest/Loot Collected -> Location ID {locId}");
-                                                session.Locations.CompleteLocationChecks(locId);
-                                            }
-                                        }
-                                    }
-                                }
-
-                            }
-                        }
-                        catch { }
+                        string dumpFile = $"dump_{DateTime.Now:HHmmss}.txt";
+                        DumpHits(mem, gamePid, pageBuf, blueprintHashToLocations, friendHashToId, dumpFile);
+                        Console.WriteLine($"[DUMP] Wrote {dumpFile}");
+                    }
+                    else if (key == ConsoleKey.R)
+                    {
+                        string f = $"refs_{DateTime.Now:HHmmss}.txt";
+                        DumpReferrers(mem, gamePid, pageBuf, blueprintHashToLocations, f);
+                        Console.WriteLine($"[REFS] Wrote {f}");
                     }
                 }
+                catch (InvalidOperationException) { /* console input is redirected; no hotkey */ }
+
+                ScanMemory(mem, gamePid, pageBuf, blueprintHashToLocations, friendHashToId, bagHits, friendHits);
+
+                // --- Loot: a hash must be new (not in baseline) and seen on 3 consecutive scans ---
+                foreach (uint h in bagStreak.Keys.Where(k => !bagHits.ContainsKey(k)).ToList()) bagStreak.Remove(h);
+                foreach (var (h, info) in bagHits)
+                {
+                    if (bagBaseline.Contains(h) || seenBagHashes.Contains(h)) continue;
+                    bagStreak[h] = bagStreak.GetValueOrDefault(h) + 1;
+                    if (bagStreak[h] < ConfirmScans) continue;
+
+                    seenBagHashes.Add(h);
+                    foreach (long locId in blueprintHashToLocations[h])
+                    {
+                        if (checkedLocations.Add(locId))
+                        {
+                            Console.WriteLine($"[SEND CHECK] Loot 0x{h:X8} @0x{info.addr:X} qty {info.qty} -> Location ID {locId}");
+                            session.Locations.CompleteLocationChecks(locId);
+                        }
+                    }
+                }
+
+                // --- Friends: unlocked after arming, not injected by us, confirmed on 3 scans ---
+                foreach (uint h in friendStreak.Keys.Where(k => !friendHits.Contains(k)).ToList()) friendStreak.Remove(h);
+                foreach (uint h in friendHits)
+                {
+                    if (friendIgnore.Contains(h) || seenFriendHashes.Contains(h)) continue;
+                    friendStreak[h] = friendStreak.GetValueOrDefault(h) + 1;
+                    if (friendStreak[h] < ConfirmScans) continue;
+
+                    seenFriendHashes.Add(h);
+                    string fId = friendHashToId[h];
+                    int fIdx = Array.FindIndex(FriendList, x => x.Equals(fId, StringComparison.OrdinalIgnoreCase));
+                    if (fIdx < 0) continue;
+                    long locId = 20000 + fIdx;
+                    if (checkedLocations.Add(locId))
+                    {
+                        Console.WriteLine($"[SEND CHECK] Friend Request Unlocked: {fId} -> Location ID {locId}");
+                        session.Locations.CompleteLocationChecks(locId);
+                    }
+                }
+
+                // --- Deliver friends received from the multiworld ---
                 lock (pendingFriendUnlocks)
                 {
                     while (pendingFriendUnlocks.Count > 0)
                     {
-                    string targetFriend = pendingFriendUnlocks.Dequeue();
+                        string targetFriend = pendingFriendUnlocks.Dequeue();
                         if (friendIdToHash.TryGetValue(targetFriend, out uint targetHash))
                         {
+                            friendIgnore.Add(targetHash);   // our own injection must not come back as a check
                             InjectFriendUnlockLive(mem, gamePid, targetFriend, targetHash);
                         }
                     }
@@ -268,7 +288,89 @@ namespace SoT
             Console.WriteLine("\nGame closed. Disconnecting from Archipelago...");
             await session.Socket.DisconnectAsync();
         }
-        
+
+        /// <summary>
+        /// One pass over the game's writable memory. Fills bagHits with candidate inventory entries
+        /// (blueprint hash followed by qty 1..99) and friendHits with friend hashes whose flag is 1.
+        /// </summary>
+        static void ScanMemory(
+            FileStream mem, int pid, byte[] pageBuf,
+            Dictionary<uint, List<long>> blueprintMap,
+            Dictionary<uint, string> friendMap,
+            Dictionary<uint, (long addr, int qty)> bagHits,
+            HashSet<uint> friendHits)
+        {
+            bagHits.Clear();
+            friendHits.Clear();
+            foreach (var (start, end) in WritableRegions(pid))
+            {
+                for (long addr = start; addr < end; addr += 4096)
+                {
+                    try
+                    {
+                        mem.Seek(addr, SeekOrigin.Begin);
+                        int read = mem.Read(pageBuf, 0, 4096);
+                        for (int off = 0; off <= read - 16; off += 4)
+                        {
+                            uint val = BitConverter.ToUInt32(pageBuf, off);
+
+                            // Friend table entry: 0x10 stride, (hash, flag, flag, 0)
+                            if (friendMap.ContainsKey(val))
+                            {
+                                int f1 = BitConverter.ToInt32(pageBuf, off + 4);
+                                int f2 = BitConverter.ToInt32(pageBuf, off + 8);
+                                int p3 = BitConverter.ToInt32(pageBuf, off + 12);
+                                if ((f1 == 0 || f1 == 1) && (f2 == 0 || f2 == 1) && p3 == 0 && f1 == 1)
+                                    friendHits.Add(val);
+                            }
+
+                            // Inventory entry: (slotHash, qty 1..99), excluding vtable 0x00BE177C template objects
+                            if (blueprintMap.ContainsKey(val))
+                            {
+                                int qty = BitConverter.ToInt32(pageBuf, off + 4);
+                                uint maybeVtable = (off >= 24) ? BitConverter.ToUInt32(pageBuf, off - 24) : 0;
+                                if (maybeVtable != 0x00BE177C && qty >= 1 && qty <= 99)
+                                    bagHits.TryAdd(val, (addr + off, qty));
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        /// <summary>Writes every candidate hit with 16 bytes before / 32 bytes after, for offline analysis.</summary>
+        static void DumpHits(
+            FileStream mem, int pid, byte[] pageBuf,
+            Dictionary<uint, List<long>> blueprintMap,
+            Dictionary<uint, string> friendMap,
+            string file)
+        {
+            using var w = new StreamWriter(file);
+            foreach (var (start, end) in WritableRegions(pid))
+            {
+                for (long addr = start; addr < end; addr += 4096)
+                {
+                    try
+                    {
+                        mem.Seek(addr, SeekOrigin.Begin);
+                        int read = mem.Read(pageBuf, 0, 4096);
+                        for (int off = 0; off <= read - 16; off += 4)
+                        {
+                            uint val = BitConverter.ToUInt32(pageBuf, off);
+                            bool isItem = blueprintMap.ContainsKey(val);
+                            bool isFriend = friendMap.ContainsKey(val);
+                            if (!isItem && !isFriend) continue;
+                            int from = Math.Max(0, off - 16);
+                            int len = Math.Min(48, read - from);
+                            w.WriteLine($"{addr + off:X8} {(isFriend ? "F" : "I")} {val:X8} {BitConverter.ToString(pageBuf, from, len)}");
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+
         static void ApplyMultiworldPatchToArchive(
             byte[] origGen,
             Dictionary<long, SlotTargetInfo> slotMapping,
@@ -316,7 +418,7 @@ namespace SoT
 
                 int slotIdx = (int)(locId - 10000);
                 // Protect Cash (#000-#027) and Nose Jobs (#053-#057) from ever being overwritten
-                if (slotIdx <= 27 || (slotIdx >= 53 && slotIdx <= 57) || slotIdx >= 995) continue;
+                if (slotIdx <= 27 || (slotIdx >= 53 && slotIdx <= 57) || slotIdx >= 995 || AlwaysVanilla.Contains(slotIdx)) continue;
 
                 int dstOffset = tableStart + (slotIdx * 88) + 4;
                 uint slotHash = indexToBlueprintHash[slotIdx];
@@ -416,6 +518,87 @@ namespace SoT
                 }
             }
             return bestPid;
+        }
+        static void DumpReferrers(FileStream mem, int pid, byte[] pageBuf,
+            Dictionary<uint, List<long>> blueprintMap, string file)
+        {
+            // Pass 1: find template objects ([hash, id, id, vtable] with a known vtable)
+            var templates = new List<(long addr, uint hash)>();
+            foreach (var (start, end) in WritableRegions(pid))
+                for (long addr = start; addr < end; addr += 4096)
+                {
+                    try
+                    {
+                        mem.Seek(addr, SeekOrigin.Begin);
+                        int read = mem.Read(pageBuf, 0, 4096);
+                        for (int off = 0; off <= read - 16; off += 4)
+                        {
+                            uint val = BitConverter.ToUInt32(pageBuf, off);
+                            if (!blueprintMap.ContainsKey(val)) continue;
+                            uint vt = BitConverter.ToUInt32(pageBuf, off + 12);
+                            if ((vt == 0x00B9F750 || vt == 0x00B9DECC) &&
+                                BitConverter.ToUInt32(pageBuf, off + 4) == BitConverter.ToUInt32(pageBuf, off + 8))
+                                templates.Add((addr + off, val));
+                        }
+                    }
+                    catch { }
+                }
+            templates.Sort((a, b) => a.addr.CompareTo(b.addr));
+            if (templates.Count == 0) return;
+            long[] keys = templates.Select(t => t.addr).ToArray();
+
+            // Pass 2: every dword that points at (or within 16 bytes of) a template
+            using var w = new StreamWriter(file);
+            w.WriteLine($"# {templates.Count} templates");
+            foreach (var (start, end) in WritableRegions(pid))
+                for (long addr = start; addr < end; addr += 4096)
+                {
+                    try
+                    {
+                        mem.Seek(addr, SeekOrigin.Begin);
+                        int read = mem.Read(pageBuf, 0, 4096);
+                        for (int off = 0; off <= read - 4; off += 4)
+                        {
+                            uint v = BitConverter.ToUInt32(pageBuf, off);
+                            if (v < keys[0] - 16 || v > keys[^1] + 16) continue;
+                            int i = Array.BinarySearch(keys, (long)v);
+                            if (i < 0) i = ~i;
+                            for (int j = Math.Max(0, i - 1); j <= Math.Min(keys.Length - 1, i); j++)
+                            {
+                                if (Math.Abs(keys[j] - (long)v) > 16) continue;
+                                int from = Math.Max(0, off - 16), len = Math.Min(48, read - from);
+                                w.WriteLine($"{addr + off:X8} -> {v:X8} hash {templates[j].hash:X8} {BitConverter.ToString(pageBuf, from, len)}");
+                            }
+                        }
+                    }
+                    catch { }
+                }
+        }
+        static Dictionary<uint, int> ReadSaveInventory(string saveDir, Dictionary<uint, List<long>> known)
+        {
+            var file = new DirectoryInfo(saveDir).GetFiles("*.sav", SearchOption.AllDirectories)
+                .OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
+            if (file == null) return null;
+
+            byte[] data;
+            using (var fs = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                data = new byte[fs.Length];
+                int n = 0; while (n < data.Length) { int r = fs.Read(data, n, data.Length - n); if (r <= 0) break; n += r; }
+            }
+
+            var owned = new Dictionary<uint, int>();
+            byte[] tag = { (byte)'i', (byte)'t', (byte)'e', (byte)'m', (byte)'2', (byte)'0' };
+            for (int o = 0; o <= data.Length - 0x2C; o++)
+            {
+                if (data[o] != tag[0] || data[o + 1] != tag[1] || data[o + 2] != tag[2] ||
+                    data[o + 3] != tag[3] || data[o + 4] != tag[4] || data[o + 5] != tag[5]) continue;
+                uint hash = BitConverter.ToUInt32(data, o + 32);
+                int q1 = BitConverter.ToInt32(data, o + 36), q2 = BitConverter.ToInt32(data, o + 40);
+                if (q1 == q2 && q1 >= 1 && known.ContainsKey(hash))
+                    owned[hash] = Math.Max(owned.GetValueOrDefault(hash), q1);
+            }
+            return owned;
         }
     }
 }
