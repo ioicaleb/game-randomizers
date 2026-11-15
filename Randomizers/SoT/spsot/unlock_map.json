@@ -1,0 +1,691 @@
+{
+ "unlocks": {
+  "28": {
+   "hash": 217875211,
+   "name": "Broflovski Garage Key",
+   "icon": "ic_item_key_04",
+   "type": 19
+  },
+  "29": {
+   "hash": 200150964,
+   "name": "Blood Orange",
+   "icon": "ic_item_borange",
+   "type": 21
+  },
+  "30": {
+   "hash": 3910346943,
+   "name": "Brains",
+   "icon": "ic_temp",
+   "type": 21
+  },
+  "31": {
+   "hash": 2635453116,
+   "name": "Cow Bell",
+   "icon": "ic_item_cowbell",
+   "type": 21
+  },
+  "32": {
+   "hash": 396734075,
+   "name": "Fromunda Cheese",
+   "icon": "ic_item_fromunda",
+   "type": 21
+  },
+  "33": {
+   "hash": 2140188374,
+   "name": "Poutine",
+   "icon": "ic_item_poutine",
+   "type": 21
+  },
+  "34": {
+   "hash": 3344323363,
+   "name": "Rubbing Alcohol",
+   "icon": "ic_item_rub_alc",
+   "type": 21
+  },
+  "35": {
+   "hash": 2658117367,
+   "name": "Community Center Key",
+   "icon": "ic_temp_augment",
+   "type": 2
+  },
+  "36": {
+   "hash": 1620756084,
+   "name": "Dragon Tail",
+   "icon": "ic_item_dragontail",
+   "type": 21
+  },
+  "38": {
+   "hash": 3783292616,
+   "name": "News Office Key",
+   "icon": "ic_item_key_05",
+   "type": 19
+  },
+  "39": {
+   "hash": 67144006,
+   "name": "Business Office Key",
+   "icon": "ic_item_key_04",
+   "type": 19
+  },
+  "40": {
+   "hash": 2622807899,
+   "name": "Cartman's Garage Key",
+   "icon": "ic_item_key_02",
+   "type": 19
+  },
+  "41": {
+   "hash": 1724148860,
+   "name": "Jimmy's Garage Key",
+   "icon": "ic_item_key_03",
+   "type": 19
+  },
+  "42": {
+   "hash": 3231341516,
+   "name": "Jimmy House Key",
+   "icon": "ic_item_key_02",
+   "type": 19
+  },
+  "43": {
+   "hash": 3231341516,
+   "name": "Jimmy House Key",
+   "icon": "ic_item_key_02",
+   "type": 19
+  },
+  "44": {
+   "hash": 3847391349,
+   "name": "Elf Camp Key",
+   "icon": "ic_item_key_02",
+   "type": 19
+  },
+  "45": {
+   "hash": 3968680388,
+   "name": "Jimbo's Key",
+   "icon": "ic_item_key_03",
+   "type": 19
+  },
+  "46": {
+   "hash": 1672899496,
+   "name": "Kenny's House Key",
+   "icon": "ic_item_key_05",
+   "type": 19
+  },
+  "47": {
+   "hash": 2244501003,
+   "name": "McCormick Garage Key",
+   "icon": "ic_item_key_03",
+   "type": 19
+  },
+  "48": {
+   "hash": 1967256330,
+   "name": "Your House's Basement Key",
+   "icon": "ic_item_key_02",
+   "type": 19
+  },
+  "49": {
+   "hash": 2107866590,
+   "name": "Your House Key",
+   "icon": "ic_item_key_02",
+   "type": 19
+  },
+  "50": {
+   "hash": 3796961600,
+   "name": "Chef's Old PO Box Key",
+   "icon": "ic_item_genkey",
+   "type": 19
+  },
+  "51": {
+   "hash": 1122303838,
+   "name": "Stotch's Garage Key",
+   "icon": "ic_item_key_03",
+   "type": 19
+  },
+  "52": {
+   "hash": 1015638782,
+   "name": "Tweek's Key",
+   "icon": "ic_item_key_04",
+   "type": 19
+  },
+  "59": {
+   "hash": 4024402095,
+   "name": "Skeeter's Cellar Key",
+   "icon": "ic_item_key_01",
+   "type": 19
+  },
+  "61": {
+   "hash": 493261075,
+   "name": "Shriveled Carcass",
+   "icon": "ic_item_shriv_carcass",
+   "type": 21
+  },
+  "62": {
+   "hash": 2160783834,
+   "name": "Moldy Sausage.",
+   "icon": "ic_item_moldy_sausage",
+   "type": 21
+  },
+  "64": {
+   "hash": 1195175288,
+   "name": "Underpants",
+   "icon": "ic_item_underpants",
+   "type": 21
+  },
+  "65": {
+   "hash": 3243716330,
+   "name": "Mackey's PO Box Key",
+   "icon": "ic_item_key_02",
+   "type": 19
+  },
+  "66": {
+   "hash": 465582666,
+   "name": "Passport",
+   "icon": "ic_item_passport",
+   "type": 21
+  },
+  "67": {
+   "hash": 633380254,
+   "name": "Tower of Peace Key",
+   "icon": "ic_item_key_mongo",
+   "type": 19
+  },
+  "71": {
+   "hash": 3220511070,
+   "name": "Brass Key",
+   "icon": "ic_item_schl_key_brnz",
+   "type": 19
+  },
+  "72": {
+   "hash": 689526174,
+   "name": "Jail Cell Key",
+   "icon": "ic_item_key_03",
+   "type": 19
+  },
+  "73": {
+   "hash": 3630639827,
+   "name": "4th Grade Classroom Key",
+   "icon": "ic_item_key_02",
+   "type": 19
+  },
+  "74": {
+   "hash": 3227322371,
+   "name": "School Basement Key",
+   "icon": "ic_item_key_01",
+   "type": 19
+  },
+  "75": {
+   "hash": 3137884119,
+   "name": "Gym Key",
+   "icon": "ic_item_key_03",
+   "type": 19
+  },
+  "76": {
+   "hash": 2337427400,
+   "name": "School Kitchen Key",
+   "icon": "ic_item_key_01",
+   "type": 19
+  },
+  "77": {
+   "hash": 2018755157,
+   "name": "School Lounge Key",
+   "icon": "ic_item_key_01",
+   "type": 19
+  },
+  "78": {
+   "hash": 2904239392,
+   "name": "School Master Key",
+   "icon": "ic_item_key_02",
+   "type": 20
+  },
+  "79": {
+   "hash": 4022091781,
+   "name": "Gold Key",
+   "icon": "ic_item_schl_key_gold",
+   "type": 19
+  },
+  "80": {
+   "hash": 2219193662,
+   "name": "Sparkle Key",
+   "icon": "ic_item_key_03",
+   "type": 19
+  },
+  "81": {
+   "hash": 2200062676,
+   "name": "Hall Monitor Locker Key",
+   "icon": "ic_item_key_01",
+   "type": 19
+  },
+  "82": {
+   "hash": 761823154,
+   "name": "Silver Key",
+   "icon": "ic_item_schl_key_slvr",
+   "type": 19
+  },
+  "83": {
+   "hash": 621837322,
+   "name": "Item_83",
+   "icon": "ic_item_slim_jim",
+   "type": 19
+  },
+  "84": {
+   "hash": 1525107488,
+   "name": "Chaos Lair Key",
+   "icon": "ic_item_key_01",
+   "type": 19
+  },
+  "85": {
+   "hash": 2391177345,
+   "name": "Mackey's Storage Unit Key",
+   "icon": "ic_item_key_unit",
+   "type": 19
+  },
+  "86": {
+   "hash": 411900292,
+   "name": "Key to Unit 61",
+   "icon": "ic_item_key_02",
+   "type": 19
+  },
+  "87": {
+   "hash": 2104003977,
+   "name": "Flute",
+   "icon": "ic_item_jimmy_flute",
+   "type": 21
+  },
+  "88": {
+   "hash": 1013098706,
+   "name": "White Power Crystal",
+   "icon": "ic_item_white_crystal",
+   "type": 21
+  },
+  "89": {
+   "hash": 817360760,
+   "name": "Item_89",
+   "icon": "ic_temp",
+   "type": 2
+  },
+  "90": {
+   "hash": 434620032,
+   "name": "Confessional Key",
+   "icon": "ic_item_key_03",
+   "type": 19
+  },
+  "91": {
+   "hash": 3172908304,
+   "name": "Incense",
+   "icon": "ic_temp",
+   "type": 2
+  },
+  "92": {
+   "hash": 1290878913,
+   "name": "Daffodil",
+   "icon": "ic_item_daffodil",
+   "type": 21
+  },
+  "93": {
+   "hash": 447059981,
+   "name": "Nazi Ring",
+   "icon": "ic_item_nz_ring",
+   "type": 21
+  },
+  "94": {
+   "hash": 1277786612,
+   "name": "Spare Bulb",
+   "icon": "ic_temp",
+   "type": 21
+  },
+  "95": {
+   "hash": 1991049165,
+   "name": "iPad",
+   "icon": "ic_item_ipad",
+   "type": 21
+  },
+  "96": {
+   "hash": 3844969692,
+   "name": "Stoley Parents Bedroom Key",
+   "icon": "ic_item_genkey",
+   "type": 19
+  },
+  "97": {
+   "hash": 43065185,
+   "name": "Dire Bear Pelt",
+   "icon": "ic_item_bear_pelt",
+   "type": 21
+  },
+  "98": {
+   "hash": 322044620,
+   "name": "Canadian Maple Syrup",
+   "icon": "ic_item_can_syrup",
+   "type": 21
+  },
+  "99": {
+   "hash": 1854526335,
+   "name": "Letter to Goth Kids",
+   "icon": "ic_item_letter",
+   "type": 21
+  },
+  "100": {
+   "hash": 4103499785,
+   "name": "Tweek's Special Delivery",
+   "icon": "ic_item_meth",
+   "type": 21
+  },
+  "101": {
+   "hash": 3404395544,
+   "name": "Item_101",
+   "icon": "ic_unlock_bleach",
+   "type": 21
+  },
+  "103": {
+   "hash": 2756801469,
+   "name": "Item_103",
+   "icon": "ic_unlock_scalp",
+   "type": 21
+  },
+  "105": {
+   "hash": 1474746588,
+   "name": "Cigarettes",
+   "icon": "ic_cigarette_pack",
+   "type": 21
+  },
+  "106": {
+   "hash": 1618927221,
+   "name": "Cigarettes",
+   "icon": "ic_cigarette_pack",
+   "type": 21
+  },
+  "107": {
+   "hash": 3841503123,
+   "name": "Item_107",
+   "icon": "ic_temp",
+   "type": 21
+  },
+  "108": {
+   "hash": 2531105388,
+   "name": "Clinic Records",
+   "icon": "ic_item_clinic_records",
+   "type": 21
+  },
+  "109": {
+   "hash": 3270550189,
+   "name": "Bishop's Balls",
+   "icon": "ic_item_bishop_balls",
+   "type": 21
+  },
+  "110": {
+   "hash": 3117983661,
+   "name": "\"Bishop's\" Balls",
+   "icon": "ic_item_bishop_balls",
+   "type": 21
+  },
+  "111": {
+   "hash": 2435345931,
+   "name": "Princess's Letter",
+   "icon": "ic_item_letter_to_earl",
+   "type": 21
+  },
+  "112": {
+   "hash": 2471018315,
+   "name": "Souvenir Photos",
+   "icon": "ic_item_souvenir_pic",
+   "type": 21
+  },
+  "113": {
+   "hash": 1193594575,
+   "name": "Chu-chu Nezumi",
+   "icon": "ic_unlock_cpm_ccnesme",
+   "type": 14
+  },
+  "114": {
+   "hash": 3373858847,
+   "name": "Furrycat",
+   "icon": "ic_unlock_cpm_furrycat",
+   "type": 14
+  },
+  "115": {
+   "hash": 3744373722,
+   "name": "Lambtron",
+   "icon": "ic_unlock_cpm_lambtron",
+   "type": 14
+  },
+  "116": {
+   "hash": 1439374586,
+   "name": "Monkay",
+   "icon": "ic_unlock_cpm_monkay",
+   "type": 14
+  },
+  "117": {
+   "hash": 419042875,
+   "name": "Pengin",
+   "icon": "ic_unlock_cpm_pengin",
+   "type": 14
+  },
+  "118": {
+   "hash": 292180448,
+   "name": "Shoe",
+   "icon": "ic_unlock_cpm_shoe",
+   "type": 14
+  },
+  "119": {
+   "hash": 1040016806,
+   "name": "Accountafish",
+   "icon": "ic_unlock_cpm_accountafish",
+   "type": 14
+  },
+  "120": {
+   "hash": 2146287157,
+   "name": "Vamporko",
+   "icon": "ic_unlock_cpm_vamporko",
+   "type": 14
+  },
+  "121": {
+   "hash": 2254284767,
+   "name": "Fetuswami",
+   "icon": "ic_unlock_cpm_fetuswami",
+   "type": 14
+  },
+  "122": {
+   "hash": 4146294779,
+   "name": "Gerbitoad",
+   "icon": "ic_unlock_cpm_gerbitoad",
+   "type": 14
+  },
+  "123": {
+   "hash": 374864915,
+   "name": "Gunrilla",
+   "icon": "ic_unlock_cpm_gunrilla",
+   "type": 14
+  },
+  "124": {
+   "hash": 1626458425,
+   "name": "Gophermon",
+   "icon": "ic_unlock_cpm_feligor",
+   "type": 14
+  },
+  "125": {
+   "hash": 3478279804,
+   "name": "Sna-kat",
+   "icon": "ic_unlock_cpm_snakat",
+   "type": 14
+  },
+  "126": {
+   "hash": 3120549161,
+   "name": "Mouse-Tik",
+   "icon": "ic_unlock_cpm_herbil",
+   "type": 14
+  },
+  "127": {
+   "hash": 3648896271,
+   "name": "Poodlesaurus Rex",
+   "icon": "ic_unlock_cpm_derpal",
+   "type": 14
+  },
+  "128": {
+   "hash": 2693268213,
+   "name": "Roo-stor",
+   "icon": "ic_unlock_cpm_roostor",
+   "type": 14
+  },
+  "129": {
+   "hash": 641714211,
+   "name": "Donkeytron",
+   "icon": "ic_unlock_cpm_donkeytron",
+   "type": 14
+  },
+  "130": {
+   "hash": 788275875,
+   "name": "Stegmata",
+   "icon": "ic_unlock_cpm_stegmata",
+   "type": 14
+  },
+  "131": {
+   "hash": 883260308,
+   "name": "Fatdactyl",
+   "icon": "ic_unlock_cpm_fatdactyl",
+   "type": 14
+  },
+  "132": {
+   "hash": 2501697754,
+   "name": "Ferasnarf",
+   "icon": "ic_unlock_cpm_ferasnarf",
+   "type": 14
+  },
+  "133": {
+   "hash": 939252707,
+   "name": "Pterdaken",
+   "icon": "ic_unlock_cpm_pterdaken",
+   "type": 14
+  },
+  "134": {
+   "hash": 217378245,
+   "name": "Biebersaurus",
+   "icon": "ic_unlock_cpm_biebersaurus",
+   "type": 14
+  },
+  "135": {
+   "hash": 265640605,
+   "name": "Brocorri",
+   "icon": "ic_unlock_cpm_brocorri",
+   "type": 14
+  },
+  "136": {
+   "hash": 323987807,
+   "name": "Velocirapstar",
+   "icon": "ic_unlock_cpm_velocirapstar",
+   "type": 14
+  },
+  "137": {
+   "hash": 719232788,
+   "name": "Flowerpotamus",
+   "icon": "ic_unlock_cpm_flowerpotamus",
+   "type": 14
+  },
+  "138": {
+   "hash": 142613519,
+   "name": "Beetlebot",
+   "icon": "ic_unlock_cpm_beetlebot",
+   "type": 14
+  },
+  "139": {
+   "hash": 3534767391,
+   "name": "Cosmonewt",
+   "icon": "ic_unlock_cpm_cosmonewt",
+   "type": 14
+  },
+  "140": {
+   "hash": 2078686509,
+   "name": "RabbiTech",
+   "icon": "ic_unlock_cpm_rabbitech",
+   "type": 14
+  },
+  "141": {
+   "hash": 1135135913,
+   "name": "Roidrat",
+   "icon": "ic_unlock_cpm_roiderat",
+   "type": 14
+  },
+  "142": {
+   "hash": 536114037,
+   "name": "Terribovine",
+   "icon": "ic_unlock_cpm_terribovine",
+   "type": 14
+  },
+  "328": {
+   "hash": 3081360894,
+   "name": "Sky Blue Dye",
+   "icon": "ic_dye_blue_sky",
+   "type": 17
+  },
+  "330": {
+   "hash": 986886219,
+   "name": "Dark Pink Dye",
+   "icon": "ic_temp",
+   "type": 17
+  },
+  "331": {
+   "hash": 2003038075,
+   "name": "Gray Dye",
+   "icon": "ic_temp",
+   "type": 17
+  },
+  "333": {
+   "hash": 3371120342,
+   "name": "Lime Green Dye",
+   "icon": "ic_dye_green_lime",
+   "type": 17
+  },
+  "334": {
+   "hash": 2181937659,
+   "name": "Indigo Dye",
+   "icon": "ic_dye_indigo",
+   "type": 17
+  },
+  "335": {
+   "hash": 264733572,
+   "name": "Pink Dye",
+   "icon": "ic_dye_pink",
+   "type": 17
+  },
+  "336": {
+   "hash": 3632887472,
+   "name": "Purple Dye",
+   "icon": "ic_dye_purple",
+   "type": 17
+  },
+  "338": {
+   "hash": 760882632,
+   "name": "Reddish-brown Dye",
+   "icon": "ic_temp",
+   "type": 17
+  },
+  "339": {
+   "hash": 3876984461,
+   "name": "Teal Dye",
+   "icon": "ic_dye_teal",
+   "type": 17
+  },
+  "340": {
+   "hash": 948837390,
+   "name": "Violet Dye",
+   "icon": "ic_dye_violet",
+   "type": 17
+  },
+  "341": {
+   "hash": 1527793170,
+   "name": "White Dye",
+   "icon": "ic_dye_white",
+   "type": 17
+  },
+  "343": {
+   "hash": 337721138,
+   "name": "Yellow Orange Dye",
+   "icon": "ic_dye_yellow_orange",
+   "type": 17
+  }
+ },
+ "start_owned": [
+  502794867,
+  609028824,
+  2766681205,
+  3047726340,
+  3057646441,
+  3182775874,
+  3998646257
+ ]
+}

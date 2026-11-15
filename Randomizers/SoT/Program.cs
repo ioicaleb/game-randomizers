@@ -154,6 +154,19 @@ namespace SoT
             }
             Console.WriteLine($"Loaded {slotMapping.Count} randomized Multiworld location assignments.");
 
+            // item id -> in-game unlock hash, for every item that can be delivered by flipping an unlock
+            var unlockByItemId = new Dictionary<long, uint>();
+            if (success.SlotData.TryGetValue("unlock_hashes", out object? rawUnlock) && rawUnlock != null)
+            {
+                JObject uj = rawUnlock as JObject ?? JObject.Parse(rawUnlock.ToString()!);
+                foreach (var up in uj.Properties())
+                    if (long.TryParse(up.Name, out long iid))
+                        unlockByItemId[iid] = unchecked((uint)up.Value.Value<long>());
+            }
+            // a location "owns" the unlock of its own item (location id == item id for the same ItemIndex)
+            var unlockHashToLoc = unlockByItemId.ToDictionary(kv => kv.Value, kv => kv.Key);
+            Console.WriteLine($"Loaded {unlockByItemId.Count} deliverable unlocks.");
+
             // Seed diagnostics: lets you see at a glance whether you are connected to a NEW multiworld.
             string seedFromSlot = success.SlotData.TryGetValue("seed", out object? seedObj) ? seedObj?.ToString() ?? "?" : "?";
             string seedFromRoom = "?";
@@ -211,9 +224,11 @@ namespace SoT
                 searchPos = strStart + Math.Max(1, len);
             }
 
-            ApplyMultiworldPatchToArchive(origGen, slotMapping, myPlayerSlot, indexToBlueprintHash, blueprintHashToLocations);
+            ApplyMultiworldPatchToArchive(origGen, slotMapping, myPlayerSlot, indexToBlueprintHash, blueprintHashToLocations,
+                new HashSet<long>(unlockByItemId.Keys));
 
             var pendingFriendUnlocks = new Queue<string>();
+            var pendingUnlocks = new Queue<(string name, uint hash)>();
             int processedReceivedCount = 0;
             var receivedNames = new HashSet<string>();
             bool goalSent = false;
@@ -236,7 +251,11 @@ namespace SoT
                         session.SetGoalAchieved();
                     }
 
-                    if (itemName.StartsWith("Friend: ", StringComparison.OrdinalIgnoreCase))
+                    if (unlockByItemId.TryGetValue(item.ItemId, out uint unlockHash))
+                    {
+                        lock (pendingUnlocks) pendingUnlocks.Enqueue((itemName, unlockHash));
+                    }
+                    else if (itemName.StartsWith("Friend: ", StringComparison.OrdinalIgnoreCase))
                     {
                         string fId = itemName.Substring("Friend: ".Length).Trim();
                         lock (pendingFriendUnlocks) pendingFriendUnlocks.Enqueue(fId);
@@ -277,7 +296,18 @@ namespace SoT
 
             var bagHits = new Dictionary<uint, (long addr, int qty)>();
             var friendHits = new HashSet<uint>();
-            ScanMemory(mem, gamePid, pageBuf, blueprintHashToLocations, friendHashToId, bagHits, friendHits);
+
+            // every unlockable the game knows (used to recognise the real flag table) + the ones we track for checks
+            var allUnlockHashes = LoadUnlockableHashes();
+            foreach (uint fh in friendHashToId.Keys) allUnlockHashes.Add(fh);
+            var trackHashes = new HashSet<uint>(unlockHashToLoc.Keys);
+            var trackHits = new HashSet<uint>();
+
+            ScanMemory(mem, gamePid, pageBuf, blueprintHashToLocations, friendHashToId, bagHits, friendHits,
+                       trackHashes, allUnlockHashes, trackHits);
+            var unlockIgnore = new HashSet<uint>(trackHits);        // already unlocked when armed, or injected by us
+            var unlockStreak = new Dictionary<uint, int>();
+            var seenUnlockHashes = new HashSet<uint>();
 
             var bagBaseline = new HashSet<uint>(bagHits.Keys);
             // Friends unlocked before arming, plus any friend we inject from AP, are never reported as checks.
@@ -286,7 +316,7 @@ namespace SoT
             var friendStreak = new Dictionary<uint, int>();
             const int ConfirmScans = 3;
 
-            Console.WriteLine($"[ARMED] {friendIgnore.Count} friends already unlocked (ignored). Loot checks come from save files.");
+            Console.WriteLine($"[ARMED] {friendIgnore.Count} friends and {unlockIgnore.Count} tracked unlocks already owned (ignored). Loot checks come from save files; unlock checks from memory.");
             Console.WriteLine("Tip: press D at any time to write a memory dump (dump_*.txt) for debugging.\n");
 
             while (Directory.Exists($"/proc/{gamePid}"))
@@ -302,7 +332,8 @@ namespace SoT
                 }
                 catch (InvalidOperationException) { /* console input is redirected; no hotkey */ }
 
-                ScanMemory(mem, gamePid, pageBuf, blueprintHashToLocations, friendHashToId, bagHits, friendHits);
+                ScanMemory(mem, gamePid, pageBuf, blueprintHashToLocations, friendHashToId, bagHits, friendHits,
+                           trackHashes, allUnlockHashes, trackHits);
 
                 // --- Loot: read the newest save whenever it changes; every owned mapped hash is a check ---
                 try
@@ -359,6 +390,34 @@ namespace SoT
                     }
                 }
 
+                // --- Vanilla unlocks of tracked items (script gifts, quest rewards): new + stable on 3 scans -> check ---
+                foreach (uint th in unlockStreak.Keys.Where(k => !trackHits.Contains(k)).ToList()) unlockStreak.Remove(th);
+                foreach (uint th in trackHits)
+                {
+                    if (unlockIgnore.Contains(th) || seenUnlockHashes.Contains(th)) continue;
+                    unlockStreak[th] = unlockStreak.GetValueOrDefault(th) + 1;
+                    if (unlockStreak[th] < ConfirmScans) continue;
+
+                    seenUnlockHashes.Add(th);
+                    long uLoc = unlockHashToLoc[th];
+                    if (checkedLocations.Add(uLoc))
+                    {
+                        Console.WriteLine($"[SEND CHECK] Unlock 0x{th:X8} obtained in-game -> Location ID {uLoc}");
+                        session.Locations.CompleteLocationChecks(uLoc);
+                    }
+                }
+
+                // --- Deliver non-friend unlocks received from the multiworld (keys, dyes, quest items, Chinpokomon) ---
+                lock (pendingUnlocks)
+                {
+                    while (pendingUnlocks.Count > 0)
+                    {
+                        var (unlockName, unlockHashValue) = pendingUnlocks.Dequeue();
+                        unlockIgnore.Add(unlockHashValue);   // our own injection must not come back as a check
+                        InjectFriendUnlockLive(mem, gamePid, unlockName, unlockHashValue, allUnlockHashes, updateFriendList: false);
+                    }
+                }
+
                 // --- Deliver friends received from the multiworld ---
                 lock (pendingFriendUnlocks)
                 {
@@ -368,7 +427,7 @@ namespace SoT
                         if (friendIdToHash.TryGetValue(targetFriend, out uint targetHash))
                         {
                             friendIgnore.Add(targetHash);   // our own injection must not come back as a check
-                            InjectFriendUnlockLive(mem, gamePid, targetFriend, targetHash, new HashSet<uint>(friendHashToId.Keys));
+                            InjectFriendUnlockLive(mem, gamePid, targetFriend, targetHash, allUnlockHashes);
                         }
                     }
                 }
@@ -409,6 +468,69 @@ namespace SoT
             return owned;
         }
 
+        /// <summary>All unlockable hashes in unlockables.ogd (52-byte records, each stores its own file offset at +48).</summary>
+        static HashSet<uint> LoadUnlockableHashes()
+        {
+            var set = new HashSet<uint>();
+            string path = Path.Combine(ExtractedFolder, "global", "mission_system", "unlockables.ogd");
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"[WARN] {path} not found; unlock detection will only recognise friends.");
+                return set;
+            }
+            byte[] u = File.ReadAllBytes(path);
+            for (int o = 0x600; o <= u.Length - 52; o += 4)
+                if (BitConverter.ToUInt32(u, o + 48) == (uint)o && BitConverter.ToUInt32(u, o + 36) == 0xDEADBF19)
+                    set.Add(BitConverter.ToUInt32(u, o));
+            Console.WriteLine($"[UNLOCKABLES] {set.Count} unlockable records read from unlockables.ogd");
+            return set;
+        }
+
+        /// <summary>
+        /// Stops Jimbo from handing out the six Big Game Hunter baits. His dialogue calls UnlockableGive with plain
+        /// name strings in fixed, zero-padded buffers; each bait name is replaced by the Hunter's Guide (which he
+        /// gives anyway, so re-giving it is a no-op). The baits then only arrive through the multiworld.
+        /// </summary>
+        static void PatchJimboDialogue(FileStream fs, byte[] oafBytes)
+        {
+            if (Environment.GetEnvironmentVariable("SOT_PATCH_JIMBO") == "0")
+            {
+                Console.WriteLine("[JIMBO] dialogue patch disabled (SOT_PATCH_JIMBO=0); Jimbo still gives his baits.");
+                return;
+            }
+            string path = Path.Combine(ExtractedFolder, "global", "dialogue", "102_cv_jimbo.dlg");
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"[JIMBO] {path} not found; Jimbo will still give his baits.");
+                return;
+            }
+            byte[] orig = File.ReadAllBytes(path);
+            byte[] patched = (byte[])orig.Clone();
+            string[] names = { "102_p_bait_tubesteak", "102_p_bait_orange", "102_p_bait_fro_cheese",
+                               "102_p_bait_poutine", "102_p_bait_alcohol", "102_p_bait_bell" };
+            byte[] replacement = Encoding.ASCII.GetBytes("10256_p_hunters_guide");
+            int count = 0;
+            foreach (string n in names)
+            {
+                byte[] nb = Encoding.ASCII.GetBytes(n);
+                int pos = ((ReadOnlySpan<byte>)patched).IndexOf(nb);
+                if (pos < 0) continue;
+                int clear = Math.Max(nb.Length, replacement.Length);   // buffers have 55+ spare zero bytes
+                for (int i = 0; i < clear; i++) patched[pos + i] = 0;
+                Array.Copy(replacement, 0, patched, pos, replacement.Length);
+                count++;
+            }
+            int at = ((ReadOnlySpan<byte>)oafBytes).IndexOf(orig);
+            if (at < 0)
+            {
+                Console.WriteLine("[JIMBO] dialogue file not found inside the archive (compressed?); Jimbo unchanged.");
+                return;
+            }
+            fs.Seek(at, SeekOrigin.Begin);
+            fs.Write(patched, 0, patched.Length);
+            Console.WriteLine($"[JIMBO] patched {count}/6 bait gives at 0x{at:X8}; the baits now come from the multiworld.");
+        }
+
         /// <summary>
         /// One pass over the game's writable memory. Fills bagHits with candidate inventory entries
         /// (blueprint hash followed by qty 1..99) and friendHits with friend hashes whose flag is 1.
@@ -418,10 +540,14 @@ namespace SoT
             Dictionary<uint, List<long>> blueprintMap,
             Dictionary<uint, string> friendMap,
             Dictionary<uint, (long addr, int qty)> bagHits,
-            HashSet<uint> friendHits)
+            HashSet<uint> friendHits,
+            HashSet<uint> trackHashes,
+            HashSet<uint> allUnlockHashes,
+            HashSet<uint> trackHits)
         {
             bagHits.Clear();
             friendHits.Clear();
+            trackHits.Clear();
             foreach (var (start, end) in WritableRegions(pid))
             {
                 for (long addr = start; addr < end; addr += 4096)
@@ -442,6 +568,17 @@ namespace SoT
                                 int p3 = BitConverter.ToInt32(pageBuf, off + 12);
                                 if ((f1 == 0 || f1 == 1) && (f2 == 0 || f2 == 1) && p3 == 0 && f1 == 1)
                                     friendHits.Add(val);
+                            }
+
+                            // Tracked unlock (key / dye / quest item / Chinpokomon): flag-table record [hash][1][0|1][0]
+                            if (trackHashes.Contains(val))
+                            {
+                                int u1 = BitConverter.ToInt32(pageBuf, off + 4);
+                                int u2 = BitConverter.ToInt32(pageBuf, off + 8);
+                                int u3 = BitConverter.ToInt32(pageBuf, off + 12);
+                                if (u1 == 1 && (u2 == 0 || u2 == 1) && u3 == 0 &&
+                                    HasFriendNeighbour(pageBuf, read, off, allUnlockHashes))
+                                    trackHits.Add(val);
                             }
 
                             // Inventory entry: (slotHash, qty 1..99), excluding vtable 0x00BE177C template objects
@@ -497,7 +634,8 @@ namespace SoT
             Dictionary<long, SlotTargetInfo> slotMapping,
             int myPlayerSlot,
             Dictionary<int, uint> indexToBlueprintHash,
-            Dictionary<uint, List<long>> blueprintHashToLocations)
+            Dictionary<uint, List<long>> blueprintHashToLocations,
+            HashSet<long> deliverableItemIds)
         {
             string oafPath = Path.Combine(GameDir, "data_archive.oaf");
             string cleanOafPath = oafPath + ".clean";
@@ -523,7 +661,7 @@ namespace SoT
                     BitConverter.GetBytes(1).CopyTo(patchedGen, structStart + 0x44);
                 }
             }
-            int localPatched = 0, remoteTokenPatched = 0;
+            int localPatched = 0, remoteTokenPatched = 0, deliverableTokens = 0;
             // Diverse pool of 30 fun collectible/junk visuals so remote/friend checks never look like identical Baseball Cards!
             // 1. Inside ApplyMultiworldPatchToArchive:
             //    Never overwrite Cash (#000-#027) or Nose Jobs (#053-#057)!
@@ -546,7 +684,10 @@ namespace SoT
                 blueprintHashToLocations[slotHash] = new List<long> { locId };
 
                 SlotTargetInfo target = kv.Value;
-                if (target.player == myPlayerSlot && target.item_id >= 10000 && target.item_id < 20000)
+                // Deliverable items are granted by flipping an unlock when received, so the chest only holds a token.
+                bool isDeliverable = deliverableItemIds.Contains(target.item_id);
+                if (isDeliverable && target.player == myPlayerSlot) deliverableTokens++;
+                if (target.player == myPlayerSlot && target.item_id >= 10000 && target.item_id < 20000 && !isDeliverable)
                 {
                     int targetItemIdx = (int)(target.item_id - 10000);
                     int srcOffset = tableStart + (targetItemIdx * 88) + 4;
@@ -570,7 +711,8 @@ namespace SoT
             {
                 fs.Seek(genOff, SeekOrigin.Begin);
                 fs.Write(patchedGen, 0, patchedGen.Length);
-                Console.WriteLine($"[ARCHIVE PATCHED at 0x{genOff:X8}] {localPatched} local items placed, {remoteTokenPatched} AP remote/friend checks armed!");
+                PatchJimboDialogue(fs, oafBytes);
+                Console.WriteLine($"[ARCHIVE PATCHED at 0x{genOff:X8}] {localPatched} local items placed, {remoteTokenPatched} AP remote/friend checks armed ({deliverableTokens} of them deliverable)!");
             }
             else
             {
@@ -585,7 +727,7 @@ namespace SoT
         /// Logs every address it touched so a failed unlock can be diagnosed.
         /// </summary>
         static void InjectFriendUnlockLive(FileStream mem, int pid, string friendId, uint friendHash,
-                                           HashSet<uint> allFriendHashes)
+                                           HashSet<uint> allFriendHashes, bool updateFriendList = true)
         {
             const int Chunk = 256 * 1024, Overlap = 1024;
             byte[] buf = new byte[Chunk];
@@ -629,7 +771,7 @@ namespace SoT
                         }
 
                         // (b) 24-slot unlock list: header [?][?][0x18][0x3EA] then (hash, qty) slots
-                        if (off + 16 + 24 * 8 <= read &&
+                        if (updateFriendList && off + 16 + 24 * 8 <= read &&
                             BitConverter.ToUInt32(buf, off + 8) == 0x18 &&
                             BitConverter.ToUInt32(buf, off + 12) == 0x3EA)
                         {

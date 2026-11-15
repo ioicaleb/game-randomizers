@@ -5,7 +5,7 @@ from worlds.AutoWorld import World, WebWorld
 
 from .Data import (
     UNIQUE_ITEMS, ITEM_BY_LABEL, ItemData, FRIEND_LIST, FRIEND_ITEM_NAMES,
-    FRIEND_LOCATION_NAMES, PROGRESSION_POOLS, USEFUL_POOLS, LOGIC_ITEMS, location_name,
+    FRIEND_LOCATION_NAMES, PROGRESSION_POOLS, USEFUL_POOLS, LOGIC_ITEMS, location_name, is_deliverable,
 )
 from .Items import SouthParkSoTItem, item_name_to_id
 from .Locations import SouthParkSoTLocation, location_name_to_id
@@ -40,6 +40,12 @@ class SouthParkSoTWorld(World):
     def _active_items(self) -> List[ItemData]:
         return [d for d in UNIQUE_ITEMS
                 if self.options.shuffle_chinpokomon or d.pool != "Chinpokomon"]
+
+    def generate_early(self) -> None:
+        # Only items that can be DELIVERED (friends, dyes, keys, quest items, Chinpokomon with a known unlock)
+        # may travel to other worlds. Weapons, armor, cosmetics, patches and logic tokens only work as a local
+        # clone placed in this world's own chests, so they are forced to stay here.
+        self.options.local_items.value |= {d.label for d in self._active_items() if not is_deliverable(d)}
 
     def create_item(self, name: str) -> SouthParkSoTItem:
         data = ITEM_BY_LABEL.get(name)
@@ -102,7 +108,13 @@ class SouthParkSoTWorld(World):
                     "item_name": loc.item.name,
                     "player": loc.item.player,
                 }
+        # item id -> unlock hash for every item the client can grant by flipping an in-game unlock
+        unlock_hashes = {
+            str(self.item_name_to_id[d.label]): d.unlock_hash
+            for d in self._active_items() if is_deliverable(d)
+        }
         return {
+            "unlock_hashes": unlock_hashes,
             "seed": self.multiworld.seed_name,
             "shuffle_friends": bool(self.options.shuffle_friends),
             "shuffle_chinpokomon": bool(self.options.shuffle_chinpokomon),
