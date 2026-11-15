@@ -1,4 +1,6 @@
 /Unpacked Games/*
-Randomizers/SoT/bin/
-Randomizers/SoT/obj/
-Randomizers/SoT/net10.0/
+Randomizers/*/bin/
+Randomizers/*/obj/
+Randomizers/*/net10.0/
+Randomizers/*/Plugin/bin
+Randomizers/*/Plugin/obj
