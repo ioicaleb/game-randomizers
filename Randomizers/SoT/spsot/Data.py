@@ -17,6 +17,10 @@ USEFUL_POOLS = {"Chinpokomon", "Weapon", "Armor", "StrapOrPatch"}
 # no weapon (soft lock), so they always stay vanilla.
 ALWAYS_VANILLA_ITEM_INDICES = {917, 918, 919, 927, 928, 929, 937, 938, 939, 947, 948, 949}
 
+# Big Game Hunter summoning items. Jimbo's script hands these out directly (no loot-template entry exists),
+# so they must keep their real blueprint data. They are handled outside the AP pool.
+ALWAYS_VANILLA_ITEM_INDICES |= {29, 31, 32, 34, 62}   # Blood Orange, Cow Bell, Fromunda Cheese, Rubbing Alcohol, Moldy Sausage
+
 # Items the region rules / goal actually depend on. Only these are marked progression.
 LOGIC_ITEMS = {
     "Community Center Key", "4th Grade Classroom Key",

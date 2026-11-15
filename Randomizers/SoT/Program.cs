@@ -22,9 +22,47 @@ namespace SoT
 
     class Program
     {
-        static readonly string ExtractedFolder = "/mnt/E8A2D79FA2D77114/Source/repos/GameRandomizers/Unpacked Games/SoT";
-        static readonly string GameDir = "/mnt/E8A2D79FA2D77114/SteamLibrary/steamapps/common/South Park - The Stick of Truth";
-        static readonly HashSet<int> AlwaysVanilla = new() { 917,918,919, 927,928,929, 937,938,939, 947,948,949 };
+        // Folder that contains the extracted game files ("global/loot_system/...").
+        // Override with the SOT_EXTRACTED_DIR environment variable; otherwise it is auto-detected.
+        static readonly string ExtractedFolder = ResolveExtractedFolder();
+        static readonly string GameDir = Environment.GetEnvironmentVariable("SOT_GAME_DIR")
+            ?? "/mnt/E8A2D79FA2D77114/SteamLibrary/steamapps/common/South Park - The Stick of Truth";
+
+        const string BlueprintRelPath = "global/loot_system/generated_item_blueprints.ogd";
+
+        static string ResolveExtractedFolder()
+        {
+            var candidates = new List<string>();
+            string? env = Environment.GetEnvironmentVariable("SOT_EXTRACTED_DIR");
+            if (!string.IsNullOrWhiteSpace(env)) candidates.Add(env);
+            candidates.Add("/mnt/E8A2D79FA2D77114/Source/repos/SoT_Rando/SoT");
+            candidates.Add("/mnt/E8A2D79FA2D77114/Source/repos/GameRandomizers/Randomizers/SoT");
+            foreach (string start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+                for (var dir = new DirectoryInfo(start); dir != null; dir = dir.Parent)
+                {
+                    candidates.Add(dir.FullName);
+                    candidates.Add(Path.Combine(dir.FullName, "SoT"));
+                }
+
+            foreach (string c in candidates)
+                if (File.Exists(Path.Combine(c, BlueprintRelPath))) return c;
+
+            // Last resort: look for the file anywhere under the repos folder.
+            try
+            {
+                var opts = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
+                foreach (string f in Directory.EnumerateFiles("/mnt/E8A2D79FA2D77114/Source/repos",
+                             "generated_item_blueprints.ogd", opts))
+                {
+                    DirectoryInfo? root = Directory.GetParent(f)?.Parent?.Parent;   // file -> loot_system -> global -> root
+                    if (root != null && File.Exists(Path.Combine(root.FullName, BlueprintRelPath))) return root.FullName;
+                }
+            }
+            catch { }
+
+            return candidates[0];   // Main() prints a clear error if this is wrong
+        }
+
         static readonly string[] FriendList = {
             "friend_tweek", "friend_token", "friend_craig", "friend_barbrady",
             "friend_bartender", "friend_beary", "friend_big_gay_al", "friend_bill",
@@ -116,6 +154,31 @@ namespace SoT
             }
             Console.WriteLine($"Loaded {slotMapping.Count} randomized Multiworld location assignments.");
 
+            // Seed diagnostics: lets you see at a glance whether you are connected to a NEW multiworld.
+            string seedFromSlot = success.SlotData.TryGetValue("seed", out object? seedObj) ? seedObj?.ToString() ?? "?" : "?";
+            string seedFromRoom = "?";
+            try { seedFromRoom = session.RoomState.Seed ?? "?"; } catch { }
+            Console.WriteLine($"[SEED] multiworld seed: {seedFromRoom}  (slot data seed: {seedFromSlot})");
+            try
+            {
+                string seedFile = Path.Combine(AppContext.BaseDirectory, "last_seed.txt");
+                string previous = File.Exists(seedFile) ? File.ReadAllText(seedFile).Trim() : "";
+                if (previous == seedFromRoom)
+                    Console.WriteLine("[SEED] NOTE: same seed as the previous run. If you expected a new multiworld, the server is still hosting the old one.");
+                File.WriteAllText(seedFile, seedFromRoom);
+            }
+            catch { }
+
+            if (!File.Exists(Path.Combine(ExtractedFolder, BlueprintRelPath)))
+            {
+                Console.WriteLine($"[ERROR] Extracted game files not found. Looked in: {ExtractedFolder}");
+                Console.WriteLine($"        Expected: {Path.Combine(ExtractedFolder, BlueprintRelPath)}");
+                Console.WriteLine("        Set SOT_EXTRACTED_DIR to the folder that contains 'global/loot_system/', e.g.:");
+                Console.WriteLine("        SOT_EXTRACTED_DIR=/path/to/extracted dotnet run");
+                return;
+            }
+            Console.WriteLine($"Using extracted game files from: {ExtractedFolder}");
+
             byte[] origGen = File.ReadAllBytes(Path.Combine(ExtractedFolder, "global", "loot_system", "generated_item_blueprints.ogd"));
             byte[] origSocial = File.ReadAllBytes(Path.Combine(ExtractedFolder, "global", "social_network", "social_network.ogd"));
 
@@ -152,6 +215,8 @@ namespace SoT
 
             var pendingFriendUnlocks = new Queue<string>();
             int processedReceivedCount = 0;
+            var receivedNames = new HashSet<string>();
+            bool goalSent = false;
 
             session.Items.ItemReceived += (ReceivedItemsHelper helper) =>
             {
@@ -161,6 +226,15 @@ namespace SoT
                     processedReceivedCount++;
                     string itemName = item.ItemName;
                     Console.WriteLine($"[AP ITEM RECEIVED] {itemName} (ID {item.ItemId}) from Player #{item.Player}");
+
+                    // Matches the apworld's completion condition: hold both "Passport" and "Princess's Letter".
+                    receivedNames.Add(itemName);
+                    if (!goalSent && receivedNames.Contains("Passport") && receivedNames.Contains("Princess's Letter"))
+                    {
+                        goalSent = true;
+                        Console.WriteLine("[GOAL] Passport + Princess's Letter collected - reporting completion!");
+                        session.SetGoalAchieved();
+                    }
 
                     if (itemName.StartsWith("Friend: ", StringComparison.OrdinalIgnoreCase))
                     {
@@ -186,6 +260,12 @@ namespace SoT
             var seenFriendHashes = new HashSet<uint>();
             var seenBagHashes = new HashSet<uint>();
 
+            // Inventory is read from the game's save files (they list only items you actually own).
+            string saveDir = Environment.GetEnvironmentVariable("SOT_SAVE_DIR")
+                ?? "/mnt/E8A2D79FA2D77114/SteamLibrary/steamapps/compatdata/213670/pfx/drive_c/users/steamuser/Documents/My Games/South Park - The Stick of Truth/save";
+            string lastSaveStamp = "";
+            Console.WriteLine($"[SAVE WATCH] {saveDir}  (checks are sent each time the game writes a save)");
+
             using FileStream mem = new FileStream($"/proc/{gamePid}/mem", FileMode.Open, FileAccess.ReadWrite);
             byte[] pageBuf = new byte[4096];
 
@@ -206,49 +286,58 @@ namespace SoT
             var friendStreak = new Dictionary<uint, int>();
             const int ConfirmScans = 3;
 
-            Console.WriteLine($"[ARMED] Baseline: {bagBaseline.Count} bag hashes, {friendIgnore.Count} friends already unlocked (ignored).");
+            Console.WriteLine($"[ARMED] {friendIgnore.Count} friends already unlocked (ignored). Loot checks come from save files.");
             Console.WriteLine("Tip: press D at any time to write a memory dump (dump_*.txt) for debugging.\n");
 
             while (Directory.Exists($"/proc/{gamePid}"))
             {
                 try
                 {
-                    var key = Console.ReadKey(true).Key;
-                    if (key == ConsoleKey.D)
+                    if (Console.KeyAvailable && Console.ReadKey(true).Key == ConsoleKey.D)
                     {
                         string dumpFile = $"dump_{DateTime.Now:HHmmss}.txt";
                         DumpHits(mem, gamePid, pageBuf, blueprintHashToLocations, friendHashToId, dumpFile);
                         Console.WriteLine($"[DUMP] Wrote {dumpFile}");
-                    }
-                    else if (key == ConsoleKey.R)
-                    {
-                        string f = $"refs_{DateTime.Now:HHmmss}.txt";
-                        DumpReferrers(mem, gamePid, pageBuf, blueprintHashToLocations, f);
-                        Console.WriteLine($"[REFS] Wrote {f}");
                     }
                 }
                 catch (InvalidOperationException) { /* console input is redirected; no hotkey */ }
 
                 ScanMemory(mem, gamePid, pageBuf, blueprintHashToLocations, friendHashToId, bagHits, friendHits);
 
-                // --- Loot: a hash must be new (not in baseline) and seen on 3 consecutive scans ---
-                foreach (uint h in bagStreak.Keys.Where(k => !bagHits.ContainsKey(k)).ToList()) bagStreak.Remove(h);
-                foreach (var (h, info) in bagHits)
+                // --- Loot: read the newest save whenever it changes; every owned mapped hash is a check ---
+                try
                 {
-                    if (bagBaseline.Contains(h) || seenBagHashes.Contains(h)) continue;
-                    bagStreak[h] = bagStreak.GetValueOrDefault(h) + 1;
-                    if (bagStreak[h] < ConfirmScans) continue;
-
-                    seenBagHashes.Add(h);
-                    foreach (long locId in blueprintHashToLocations[h])
+                    var newest = Directory.Exists(saveDir)
+                        ? new DirectoryInfo(saveDir).GetFiles("*.sav", SearchOption.AllDirectories)
+                              .OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault()
+                        : null;
+                    if (newest != null)
                     {
-                        if (checkedLocations.Add(locId))
+                        string stamp = $"{newest.FullName}|{newest.LastWriteTimeUtc.Ticks}|{newest.Length}";
+                        if (stamp != lastSaveStamp)
                         {
-                            Console.WriteLine($"[SEND CHECK] Loot 0x{h:X8} @0x{info.addr:X} qty {info.qty} -> Location ID {locId}");
-                            session.Locations.CompleteLocationChecks(locId);
+                            var owned = ReadSaveInventory(newest.FullName, blueprintHashToLocations);
+                            if (owned != null)
+                            {
+                                lastSaveStamp = stamp;
+                                Console.WriteLine($"[SAVE] {newest.Name}: {owned.Count} known items in inventory");
+                                foreach (var (h, qty) in owned)
+                                {
+                                    if (!seenBagHashes.Add(h)) continue;
+                                    foreach (long locId in blueprintHashToLocations[h])
+                                    {
+                                        if (checkedLocations.Add(locId))
+                                        {
+                                            Console.WriteLine($"[SEND CHECK] Loot 0x{h:X8} qty {qty} -> Location ID {locId}");
+                                            session.Locations.CompleteLocationChecks(locId);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
+                catch (IOException) { /* save is being written; try again next tick */ }
 
                 // --- Friends: unlocked after arming, not injected by us, confirmed on 3 scans ---
                 foreach (uint h in friendStreak.Keys.Where(k => !friendHits.Contains(k)).ToList()) friendStreak.Remove(h);
@@ -279,7 +368,7 @@ namespace SoT
                         if (friendIdToHash.TryGetValue(targetFriend, out uint targetHash))
                         {
                             friendIgnore.Add(targetHash);   // our own injection must not come back as a check
-                            InjectFriendUnlockLive(mem, gamePid, targetFriend, targetHash);
+                            InjectFriendUnlockLive(mem, gamePid, targetFriend, targetHash, new HashSet<uint>(friendHashToId.Keys));
                         }
                     }
                 }
@@ -287,6 +376,37 @@ namespace SoT
             }
             Console.WriteLine("\nGame closed. Disconnecting from Archipelago...");
             await session.Socket.DisconnectAsync();
+        }
+
+        /// <summary>
+        /// Parses the item-instance table of a Stick of Truth save. Each record starts with an
+        /// "item20..." id string; at +32 are [blueprint hash][qty][qty] (qty fields match).
+        /// Returns hash -> qty for hashes present in <paramref name="known"/>, or null if unreadable.
+        /// </summary>
+        static Dictionary<uint, int> ReadSaveInventory(string path, Dictionary<uint, List<long>> known)
+        {
+            byte[] data;
+            using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                data = new byte[fs.Length];
+                int n = 0;
+                while (n < data.Length) { int r = fs.Read(data, n, data.Length - n); if (r <= 0) break; n += r; }
+                if (n < data.Length) return null;
+            }
+            if (data.Length < 4 || data[0] != (byte)'S' || data[1] != (byte)'A' || data[2] != (byte)'V' || data[3] != (byte)'E')
+                return null;
+
+            var owned = new Dictionary<uint, int>();
+            for (int o = 0; o <= data.Length - 0x2C; o++)
+            {
+                if (data[o] != (byte)'i' || data[o + 1] != (byte)'t' || data[o + 2] != (byte)'e' ||
+                    data[o + 3] != (byte)'m' || data[o + 4] != (byte)'2' || data[o + 5] != (byte)'0') continue;
+                uint hash = BitConverter.ToUInt32(data, o + 32);
+                int q1 = BitConverter.ToInt32(data, o + 36), q2 = BitConverter.ToInt32(data, o + 40);
+                if (q1 == q2 && q1 >= 1 && known.ContainsKey(hash))
+                    owned[hash] = Math.Max(owned.GetValueOrDefault(hash), q1);
+            }
+            return owned;
         }
 
         /// <summary>
@@ -371,6 +491,7 @@ namespace SoT
             }
         }
 
+        
         static void ApplyMultiworldPatchToArchive(
             byte[] origGen,
             Dictionary<long, SlotTargetInfo> slotMapping,
@@ -418,7 +539,7 @@ namespace SoT
 
                 int slotIdx = (int)(locId - 10000);
                 // Protect Cash (#000-#027) and Nose Jobs (#053-#057) from ever being overwritten
-                if (slotIdx <= 27 || (slotIdx >= 53 && slotIdx <= 57) || slotIdx >= 995 || AlwaysVanilla.Contains(slotIdx)) continue;
+                if (slotIdx <= 27 || (slotIdx >= 53 && slotIdx <= 57) || slotIdx >= 995) continue;
 
                 int dstOffset = tableStart + (slotIdx * 88) + 4;
                 uint slotHash = indexToBlueprintHash[slotIdx];
@@ -457,41 +578,106 @@ namespace SoT
             }
         }
 
-        static void InjectFriendUnlockLive(FileStream mem, int pid, string friendId, uint friendHash)
+        /// <summary>
+        /// Unlocks a friend the way a natural unlock changes memory:
+        ///  (a) every flag-table record [hash][f1][f2][0] that has other friend records next to it gets f1=f2=1;
+        ///  (b) the hash is appended to the 24-slot unlock list (header [.. .. 0x18 0x3EA], empty slots 0xDEADBF19).
+        /// Logs every address it touched so a failed unlock can be diagnosed.
+        /// </summary>
+        static void InjectFriendUnlockLive(FileStream mem, int pid, string friendId, uint friendHash,
+                                           HashSet<uint> allFriendHashes)
         {
-            byte[] pageBuf = new byte[4096];
+            const int Chunk = 256 * 1024, Overlap = 1024;
+            byte[] buf = new byte[Chunk];
+            var tableWrites = new HashSet<long>();
+            var listWrites = new HashSet<long>();
+            var listAlready = 0;
+
             foreach (var (start, end) in WritableRegions(pid))
             {
-
-                if (start >= 0x7F0000000000L) continue;
-                for (long addr = start; addr < end; addr += 4096)
+                for (long addr = start; addr < end; addr += Chunk - Overlap)
                 {
+                    int read;
                     try
                     {
                         mem.Seek(addr, SeekOrigin.Begin);
-                        int read = mem.Read(pageBuf, 0, 4096);
-                        for (int off = 0; off <= read - 16; off += 4)
+                        read = mem.Read(buf, 0, (int)Math.Min(Chunk, end - addr));
+                    }
+                    catch { continue; }
+                    if (read < 32) continue;
+
+                    for (int off = 0; off <= read - 16; off += 4)
+                    {
+                        // (a) flag-table record with a friend record close by
+                        if (BitConverter.ToUInt32(buf, off) == friendHash)
                         {
-                            if (BitConverter.ToUInt32(pageBuf, off) == friendHash)
+                            int f1 = BitConverter.ToInt32(buf, off + 4);
+                            int f2 = BitConverter.ToInt32(buf, off + 8);
+                            int p3 = BitConverter.ToInt32(buf, off + 12);
+                            if ((f1 == 0 || f1 == 1) && (f2 == 0 || f2 == 1) && p3 == 0 &&
+                                HasFriendNeighbour(buf, read, off, allFriendHashes) &&
+                                tableWrites.Add(addr + off))
                             {
-                                int f1 = BitConverter.ToInt32(pageBuf, off + 4);
-                                int f2 = BitConverter.ToInt32(pageBuf, off + 8);
-                                int p3 = BitConverter.ToInt32(pageBuf, off + 12);
-                                if ((f1 == 0 || f1 == 1) && (f2 == 0 || f2 == 1) && p3 == 0)
+                                try
                                 {
                                     mem.Seek(addr + off + 4, SeekOrigin.Begin);
                                     mem.Write(BitConverter.GetBytes(1), 0, 4);
                                     mem.Write(BitConverter.GetBytes(1), 0, 4);
-                                    Console.WriteLine($"[UNLOCKED IN-GAME] {friendId} (0x{friendHash:X8}) unlocked on Facebook!");
-                                    return;
+                                }
+                                catch { tableWrites.Remove(addr + off); }
+                            }
+                        }
+
+                        // (b) 24-slot unlock list: header [?][?][0x18][0x3EA] then (hash, qty) slots
+                        if (off + 16 + 24 * 8 <= read &&
+                            BitConverter.ToUInt32(buf, off + 8) == 0x18 &&
+                            BitConverter.ToUInt32(buf, off + 12) == 0x3EA)
+                        {
+                            int slots = off + 16;
+                            for (int i = 0; i < 24; i++)
+                            {
+                                uint h = BitConverter.ToUInt32(buf, slots + i * 8);
+                                if (h == friendHash) { listAlready++; break; }
+                                if (h == 0xDEADBF19)
+                                {
+                                    long target = addr + slots + i * 8;
+                                    if (listWrites.Add(target))
+                                    {
+                                        try
+                                        {
+                                            mem.Seek(target, SeekOrigin.Begin);
+                                            mem.Write(BitConverter.GetBytes(friendHash), 0, 4);
+                                            mem.Write(BitConverter.GetBytes(1), 0, 4);
+                                        }
+                                        catch { listWrites.Remove(target); }
+                                    }
+                                    break;
                                 }
                             }
                         }
                     }
-                    catch { }
                 }
             }
+
+            Console.WriteLine($"[INJECT] {friendId} (0x{friendHash:X8}): flag records set: {tableWrites.Count}" +
+                              (tableWrites.Count > 0 ? " @ " + string.Join(", ", tableWrites.Select(a => "0x" + a.ToString("X"))) : "") +
+                              $"; unlock-list slots written: {listWrites.Count} (already present: {listAlready})");
+            if (tableWrites.Count == 0)
+                Console.WriteLine($"[INJECT] WARNING: no live friend table found for {friendId}; nothing was unlocked.");
         }
+
+        static bool HasFriendNeighbour(byte[] buf, int read, int off, HashSet<uint> friendHashes)
+        {
+            for (int k = -8; k <= 8; k++)
+            {
+                if (k == 0) continue;
+                int o = off + k * 16;
+                if (o < 0 || o + 4 > read) continue;
+                if (friendHashes.Contains(BitConverter.ToUInt32(buf, o))) return true;
+            }
+            return false;
+        }
+
         static int FindTrueGamePid()
         {
             int bestPid = -1;
@@ -518,87 +704,6 @@ namespace SoT
                 }
             }
             return bestPid;
-        }
-        static void DumpReferrers(FileStream mem, int pid, byte[] pageBuf,
-            Dictionary<uint, List<long>> blueprintMap, string file)
-        {
-            // Pass 1: find template objects ([hash, id, id, vtable] with a known vtable)
-            var templates = new List<(long addr, uint hash)>();
-            foreach (var (start, end) in WritableRegions(pid))
-                for (long addr = start; addr < end; addr += 4096)
-                {
-                    try
-                    {
-                        mem.Seek(addr, SeekOrigin.Begin);
-                        int read = mem.Read(pageBuf, 0, 4096);
-                        for (int off = 0; off <= read - 16; off += 4)
-                        {
-                            uint val = BitConverter.ToUInt32(pageBuf, off);
-                            if (!blueprintMap.ContainsKey(val)) continue;
-                            uint vt = BitConverter.ToUInt32(pageBuf, off + 12);
-                            if ((vt == 0x00B9F750 || vt == 0x00B9DECC) &&
-                                BitConverter.ToUInt32(pageBuf, off + 4) == BitConverter.ToUInt32(pageBuf, off + 8))
-                                templates.Add((addr + off, val));
-                        }
-                    }
-                    catch { }
-                }
-            templates.Sort((a, b) => a.addr.CompareTo(b.addr));
-            if (templates.Count == 0) return;
-            long[] keys = templates.Select(t => t.addr).ToArray();
-
-            // Pass 2: every dword that points at (or within 16 bytes of) a template
-            using var w = new StreamWriter(file);
-            w.WriteLine($"# {templates.Count} templates");
-            foreach (var (start, end) in WritableRegions(pid))
-                for (long addr = start; addr < end; addr += 4096)
-                {
-                    try
-                    {
-                        mem.Seek(addr, SeekOrigin.Begin);
-                        int read = mem.Read(pageBuf, 0, 4096);
-                        for (int off = 0; off <= read - 4; off += 4)
-                        {
-                            uint v = BitConverter.ToUInt32(pageBuf, off);
-                            if (v < keys[0] - 16 || v > keys[^1] + 16) continue;
-                            int i = Array.BinarySearch(keys, (long)v);
-                            if (i < 0) i = ~i;
-                            for (int j = Math.Max(0, i - 1); j <= Math.Min(keys.Length - 1, i); j++)
-                            {
-                                if (Math.Abs(keys[j] - (long)v) > 16) continue;
-                                int from = Math.Max(0, off - 16), len = Math.Min(48, read - from);
-                                w.WriteLine($"{addr + off:X8} -> {v:X8} hash {templates[j].hash:X8} {BitConverter.ToString(pageBuf, from, len)}");
-                            }
-                        }
-                    }
-                    catch { }
-                }
-        }
-        static Dictionary<uint, int> ReadSaveInventory(string saveDir, Dictionary<uint, List<long>> known)
-        {
-            var file = new DirectoryInfo(saveDir).GetFiles("*.sav", SearchOption.AllDirectories)
-                .OrderByDescending(f => f.LastWriteTimeUtc).FirstOrDefault();
-            if (file == null) return null;
-
-            byte[] data;
-            using (var fs = new FileStream(file.FullName, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
-            {
-                data = new byte[fs.Length];
-                int n = 0; while (n < data.Length) { int r = fs.Read(data, n, data.Length - n); if (r <= 0) break; n += r; }
-            }
-
-            var owned = new Dictionary<uint, int>();
-            byte[] tag = { (byte)'i', (byte)'t', (byte)'e', (byte)'m', (byte)'2', (byte)'0' };
-            for (int o = 0; o <= data.Length - 0x2C; o++)
-            {
-                if (data[o] != tag[0] || data[o + 1] != tag[1] || data[o + 2] != tag[2] ||
-                    data[o + 3] != tag[3] || data[o + 4] != tag[4] || data[o + 5] != tag[5]) continue;
-                uint hash = BitConverter.ToUInt32(data, o + 32);
-                int q1 = BitConverter.ToInt32(data, o + 36), q2 = BitConverter.ToInt32(data, o + 40);
-                if (q1 == q2 && q1 >= 1 && known.ContainsKey(hash))
-                    owned[hash] = Math.Max(owned.GetValueOrDefault(hash), q1);
-            }
-            return owned;
         }
     }
 }
