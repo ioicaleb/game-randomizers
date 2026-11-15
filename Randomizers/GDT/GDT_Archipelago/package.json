@@ -1,0 +1,9 @@
+{
+  "id": "GDT_Archipelago",
+  "name": "Archipelago Multiworld",
+  "version": "1.0.0",
+  "author": "SoT_Rando",
+  "description": "Archipelago Multiworld client for Game Dev Tycoon.",
+  "main": "./archipelago.js",
+  "dependencies": { "gdt-modAPI": "0.1.x" }
+}
