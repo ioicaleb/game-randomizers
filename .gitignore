@@ -1,1 +1,4 @@
 /Unpacked Games/*
+/Randomizers/*/Plugin/obj/
+/Randomizers/*/Plugin/bin/
+/Randomizers/*/Plugin/*.csproj
