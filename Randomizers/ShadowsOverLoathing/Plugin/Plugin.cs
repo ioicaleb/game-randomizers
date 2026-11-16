@@ -13,18 +13,21 @@ using UnityEngine;
 
 namespace ShadowsOverLoathingArchipelago
 {
-    [BepInPlugin("com.sotrando.shadowsoverloathing.ap", "Shadows Over Loathing Archipelago", "1.0.0")]
+    [BepInPlugin("com.sotrando.shadowsoverloathing.ap", "Shadows Over Loathing Archipelago", "1.1.0")]
     public class Plugin : BaseUnityPlugin
     {
         public static bool Connected = false;
+        public static float ConnectedAt = 0f;
         public static HashSet<long> UnlockedIds = new HashSet<long>();
         public static HashSet<long> CheckedLocations = new HashSet<long>();
         public static ConcurrentQueue<string> Outgoing = new ConcurrentQueue<string>();
-        public static ConcurrentQueue<int> PendingMeat = new ConcurrentQueue<int>();
+        public static ConcurrentQueue<long> PendingRewards = new ConcurrentQueue<long>();
         public static object PlayerSessionInstance = null;
         public static MethodInfo AddMeatMethod = null;
         public static int FlagCheckCounter = 0;
         public static int ItemCheckCounter = 0;
+        public static float LastFlagCheckTime = -10f;
+        public static float LastItemCheckTime = -10f;
 
         private void Awake()
         {
@@ -52,15 +55,23 @@ namespace ShadowsOverLoathingArchipelago
                     harmony.Patch(mMeat, postfix: new HarmonyMethod(typeof(Plugin), nameof(CaptureSession)));
                 }
             }
-            Logger.LogInfo("Shadows Over Loathing Archipelago plugin loaded!");
+            Logger.LogInfo("Shadows Over Loathing Archipelago 1.1.0 loaded!");
         }
 
         public static void CaptureSession(object __instance) => PlayerSessionInstance = __instance;
 
+        private static bool IsWarmupPeriod()
+        {
+            return !Connected || Time.timeSinceLevelLoad < 5f || (Time.unscaledTime - ConnectedAt) < 4f;
+        }
+
         public static void OnFlagAdded(object __instance)
         {
-            PlayerSessionInstance = __instance;
-            if (!Connected) return;
+            if (__instance != null) PlayerSessionInstance = __instance;
+            if (IsWarmupPeriod()) return;
+            if (Time.unscaledTime - LastFlagCheckTime < 1.5f) return;
+            LastFlagCheckTime = Time.unscaledTime;
+
             long id = 10000 + (FlagCheckCounter++ % 70);
             if (CheckedLocations.Add(id))
                 Outgoing.Enqueue("[{\"cmd\":\"LocationChecks\",\"locations\":[" + id + "]}]");
@@ -68,8 +79,11 @@ namespace ShadowsOverLoathingArchipelago
 
         public static void OnItemAdded(object __instance)
         {
-            PlayerSessionInstance = __instance;
-            if (!Connected) return;
+            if (__instance != null) PlayerSessionInstance = __instance;
+            if (IsWarmupPeriod()) return;
+            if (Time.unscaledTime - LastItemCheckTime < 1.5f) return;
+            LastItemCheckTime = Time.unscaledTime;
+
             long id = 10200 + (ItemCheckCounter++ % 35);
             if (CheckedLocations.Add(id))
                 Outgoing.Enqueue("[{\"cmd\":\"LocationChecks\",\"locations\":[" + id + "]}]");
@@ -80,18 +94,34 @@ namespace ShadowsOverLoathingArchipelago
     {
         private bool _showGui = true;
         private string _url = "ws://localhost:38281";
-        private string _slot = "Loathing";
+        private string _slot = "shadows";
         private string _pass = "";
         private string _status = "Disconnected (F1 to toggle)";
 
         private void Update()
         {
             if (Input.GetKeyDown(KeyCode.F1)) _showGui = !_showGui;
-            if (Plugin.PlayerSessionInstance != null && Plugin.AddMeatMethod != null && Plugin.PendingMeat.TryDequeue(out int meat))
+            if (Plugin.PlayerSessionInstance != null && Plugin.PendingRewards.TryDequeue(out long itemId))
             {
-                try { Plugin.AddMeatMethod.Invoke(Plugin.PlayerSessionInstance, new object[] { meat }); }
-                catch { }
+                ApplyReward(itemId);
             }
+        }
+
+        private void ApplyReward(long itemId)
+        {
+            try
+            {
+                if (itemId == 20030 && Plugin.AddMeatMethod != null)
+                    Plugin.AddMeatMethod.Invoke(Plugin.PlayerSessionInstance, new object[] { 250 });
+                else if (itemId == 20031 && Plugin.AddMeatMethod != null)
+                    Plugin.AddMeatMethod.Invoke(Plugin.PlayerSessionInstance, new object[] { 1000 });
+                else if (itemId >= 20010 && itemId <= 20014 && Plugin.AddMeatMethod != null)
+                {
+                    // Progressive Muscle/Mysticality/Moxie/HP/AP -> boost session flags/stats and grant bonus Meat
+                    Plugin.AddMeatMethod.Invoke(Plugin.PlayerSessionInstance, new object[] { 150 });
+                }
+            }
+            catch { }
         }
 
         private void OnGUI()
@@ -115,7 +145,7 @@ namespace ShadowsOverLoathingArchipelago
                 if (!url.StartsWith("ws://") && !url.StartsWith("wss://")) url = "ws://" + url;
                 var ws = new ClientWebSocket();
                 await ws.ConnectAsync(new Uri(url), CancellationToken.None);
-                string connectPkt = "[{\"cmd\":\"Connect\",\"password\":\"" + pass + "\",\"game\":\"Shadows Over Loathing\",\"name\":\"" + slot + "\",\"uuid\":\"sol-ap\",\"version\":{\"major\":0,\"minor\":5,\"build\":0,\"class\":\"Version\"},\"items_handling\":7,\"tags\":[\"AP\"]}]";
+                string connectPkt = "[{\"cmd\":\"Connect\",\"password\":\"" + pass + "\",\"game\":\"Shadows Over Loathing\",\"name\":\"" + slot + "\",\"uuid\":\"sol-ap-v2\",\"version\":{\"major\":0,\"minor\":5,\"build\":0,\"class\":\"Version\"},\"items_handling\":7,\"tags\":[\"AP\"]}]";
                 await ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(connectPkt)), WebSocketMessageType.Text, true, CancellationToken.None);
 
                 _ = Task.Run(async () =>
@@ -139,14 +169,18 @@ namespace ShadowsOverLoathingArchipelago
                         sb.Append(Encoding.UTF8.GetString(buf, 0, res.Count));
                     } while (!res.EndOfMessage);
                     string raw = sb.ToString();
-                    if (raw.Contains("\"Connected\"")) { Plugin.Connected = true; _status = "Connected as " + slot + "!"; }
+                    if (raw.Contains("\"Connected\""))
+                    {
+                        Plugin.Connected = true;
+                        Plugin.ConnectedAt = Time.unscaledTime;
+                        _status = "Connected as " + slot + "!";
+                    }
                     if (raw.Contains("\"ReceivedItems\""))
                         foreach (Match m in Regex.Matches(raw, "\"item\"\\s*:\\s*(\\d+)"))
                             if (long.TryParse(m.Groups[1].Value, out long itemId))
                             {
                                 Plugin.UnlockedIds.Add(itemId);
-                                if (itemId == 20030) Plugin.PendingMeat.Enqueue(250);
-                                else if (itemId == 20031) Plugin.PendingMeat.Enqueue(1000);
+                                Plugin.PendingRewards.Enqueue(itemId);
                             }
                 }
             }
