@@ -34,17 +34,7 @@ def read_all_slots(prof_path):
         if b + 0x4000 <= len(data):
             act, sid, coins, stamps = struct.unpack_from("<IIII", data, b)
             rec_cnt = next(iter(struct.unpack_from("<I", data, b + 0x160)))
-            burned = 0
-            for i in range(min(200, rec_cnt)):
-                t_hash, burn_c, _, _ = struct.unpack_from("<IIII", data, b + 0x164 + i * 16)
-                if t_hash != 0 and burn_c >= 1:
-                    burned += 1
-            combos = next(iter(struct.unpack_from("<I", data, b + 0x3C00)))
-            slots[b] = {
-                "slot_num": idx, "act": act, "sid": sid,
-                "coins": coins, "stamps": stamps,
-                "burned": min(140, burned), "combos": min(99, combos)
-            }
+            slots[b] = {"slot_num": idx, "act": act, "sid": sid, "coins": coins, "stamps": stamps, "rec_cnt": rec_cnt}
     return slots
 
 def find_live_profile_addr(pid, sid, expected_coins):
@@ -81,23 +71,9 @@ def find_live_profile_addr(pid, sid, expected_coins):
         pass
     return None
 
-def read_live_progress(pid, p_addr):
-    try:
-        with open(f"/proc/{pid}/mem", "rb", buffering=0) as mem:
-            mem.seek(p_addr)
-            buf = mem.read(0x3C20)
-            rec_cnt = next(iter(struct.unpack_from("<I", buf, 0x160)))
-            burned_toys = 0
-            for i in range(min(200, rec_cnt)):
-                t_hash, burn_c, _, _ = struct.unpack_from("<IIII", buf, 0x164 + i * 16)
-                if t_hash != 0 and burn_c >= 1:
-                    burned_toys += 1
-            combo_cnt = next(iter(struct.unpack_from("<I", buf, 0x3C00)))
-            return min(140, burned_toys), min(99, combo_cnt)
-    except Exception:
-        return None
-
-def apply_ram_reward(pid, p_addr, add_c=0, add_s=0, set_cat=0, add_sl=0):
+def sync_live_ram(pid, p_addr, unlocked_toys, max_cat, add_c=0, add_s=0, add_sl=0):
+    purchased_indices = set()
+    combo_cnt = 0
     try:
         with open(f"/proc/{pid}/mem", "r+b", buffering=0) as mem:
             mem.seek(p_addr + 0x008)
@@ -105,21 +81,37 @@ def apply_ram_reward(pid, p_addr, add_c=0, add_s=0, set_cat=0, add_sl=0):
             if add_c or add_s:
                 mem.seek(p_addr + 0x008)
                 mem.write(struct.pack("<II", min(999, coins + add_c), min(99, stamps + add_s)))
-            if set_cat > 0:
-                mem.seek(p_addr + 0x018)
-                cur_cat = next(iter(struct.unpack("<I", mem.read(4))))
-                if set_cat > cur_cat:
-                    mem.seek(p_addr + 0x018)
-                    mem.write(struct.pack("<I", set_cat))
+
+            # Enforce received Catalog level (1..7)
+            mem.seek(p_addr + 0x018)
+            mem.write(struct.pack("<I", max_cat))
+
             if add_sl > 0:
                 mem.seek(p_addr + 0x16C)
                 cur_sl = next(iter(struct.unpack("<I", mem.read(4))))
                 mem.seek(p_addr + 0x16C)
                 mem.write(struct.pack("<I", min(8, cur_sl + add_sl)))
-            print(f"[AP REWARD] Coins={min(999, coins+add_c)}, Stamps={min(99, stamps+add_s)}")
-            return True
+
+            # Enforce individual Toy unlocks by catalog slot index (0..139) & detect purchases
+            mem.seek(p_addr + 0x160)
+            rec_cnt = next(iter(struct.unpack("<I", mem.read(4))))
+            for i in range(min(140, rec_cnt)):
+                rec_off = p_addr + 0x164 + i * 16
+                mem.seek(rec_off)
+                th, unl, purch, res = struct.unpack("<IIII", mem.read(16))
+                if th != 0:
+                    if purch >= 1:
+                        purchased_indices.add(i)
+                    should_unl = 1 if (i < 4 or i in unlocked_toys) else 0
+                    if unl != should_unl:
+                        mem.seek(rec_off + 4)
+                        mem.write(struct.pack("<I", should_unl))
+
+            mem.seek(p_addr + 0x3C00)
+            combo_cnt = min(99, next(iter(struct.unpack("<I", mem.read(4)))))
     except Exception:
-        return False
+        return None
+    return purchased_indices, combo_cnt
 
 async def main():
     prof_path = find_profiles_bin()
@@ -132,7 +124,9 @@ async def main():
     pw = input("Password (blank if none): ").strip()
 
     checked = set()
-    pending = []
+    unlocked_toys = {0, 1, 2, 3}
+    max_cat = 1
+    pending_c, pending_s, pending_sl = 0, 0, 0
     initial_slots = read_all_slots(prof_path)
     active_base = None
     live_addr = None
@@ -142,7 +136,7 @@ async def main():
         await ws.recv()
         await ws.send(json.dumps([{
             "cmd": "Connect", "password": pw, "game": "Little Inferno",
-            "name": slot, "uuid": "li-ap-auto",
+            "name": slot, "uuid": "li-ap-toys",
             "version": {"major": 0, "minor": 5, "build": 0, "class": "Version"},
             "items_handling": 7, "tags": ["AP"]
         }]))
@@ -156,7 +150,22 @@ async def main():
                         checked.update(pkt.get("checked_locations", []))
                     elif pkt.get("cmd") == "ReceivedItems":
                         for it in pkt.get("items", []):
-                            pending.append(it["item"])
+                            code = it["item"]
+                            if 20002 <= code <= 20007:
+                                max_cat = max(max_cat, code - 20000)
+                                print(f"[UNLOCK] Catalog {max_cat} Unlocked!")
+                            elif 21000 <= code <= 21139:
+                                t_idx = code - 21000
+                                unlocked_toys.add(t_idx)
+                                print(f"[UNLOCK] Toy #{t_idx+1:03d} Unlocked in Catalog!")
+                            elif code == 20010:
+                                pending_sl += 1
+                            elif code == 20030:
+                                pending_c += 10
+                            elif code == 20031:
+                                pending_c += 25
+                            elif code == 20032:
+                                pending_s += 1
             except asyncio.TimeoutError:
                 pass
 
@@ -168,13 +177,12 @@ async def main():
                 break
 
             cur_slots = read_all_slots(prof_path)
-            # Auto-detect whichever save slot changed since startup
             if active_base is None:
                 for b, cur in cur_slots.items():
                     old = initial_slots.get(b)
                     if cur["act"] == 1 and cur["sid"] != 0 and old != cur:
                         active_base = b
-                        print(f"[AUTO-DETECTED] Locked onto Fireplace Slot {cur['slot_num']} (SID=0x{cur['sid']:X})!")
+                        print(f"[AUTO-DETECTED] Locked onto Fireplace Slot {cur['slot_num']}!")
                         break
 
             if pid and active_base is not None:
@@ -182,33 +190,24 @@ async def main():
                 if not live_addr:
                     live_addr = find_live_profile_addr(pid, prof["sid"], prof["coins"])
                     if live_addr:
-                        print(f"[AUTO-SYNC] Live RAM profile locked at 0x{live_addr:X}!")
+                        print(f"[AUTO-SYNC] Live Catalog & Toy RAM locked at 0x{live_addr:X}!")
 
                 if live_addr:
-                    if pending:
-                        for code in pending:
-                            if 20002 <= code <= 20007:
-                                apply_ram_reward(pid, live_addr, set_cat=code - 20000)
-                            elif code == 20010:
-                                apply_ram_reward(pid, live_addr, add_sl=1)
-                            elif code == 20030:
-                                apply_ram_reward(pid, live_addr, add_c=50)
-                            elif code == 20031:
-                                apply_ram_reward(pid, live_addr, add_c=150)
-                            elif code == 20032:
-                                apply_ram_reward(pid, live_addr, add_s=5)
-                        pending.clear()
-
-                    res = read_live_progress(pid, live_addr)
+                    res = sync_live_ram(pid, live_addr, unlocked_toys, max_cat, pending_c, pending_s, pending_sl)
+                    pending_c, pending_s, pending_sl = 0, 0, 0
                     if res:
-                        burned_cnt, combo_cnt = res
+                        purch_set, combo_cnt = res
                         new_locs = []
-                        for b_i in range(burned_cnt):
-                            lid = 10000 + b_i
-                            if lid not in checked: checked.add(lid); new_locs.append(lid)
+                        for t_idx in sorted(purch_set):
+                            lid = 10000 + t_idx
+                            if lid not in checked:
+                                checked.add(lid)
+                                new_locs.append(lid)
                         for c_i in range(combo_cnt):
                             lid = 11000 + c_i
-                            if lid not in checked: checked.add(lid); new_locs.append(lid)
+                            if lid not in checked:
+                                checked.add(lid)
+                                new_locs.append(lid)
                         if new_locs:
                             print(f"[SEND CHECKS] {new_locs}")
                             await ws.send(json.dumps([{"cmd": "LocationChecks", "locations": new_locs}]))
