@@ -13,10 +13,11 @@ using UnityEngine;
 
 namespace GraveyardKeeperArchipelago
 {
-    [BepInPlugin("com.sotrando.graveyardkeeper.ap", "Graveyard Keeper Archipelago", "1.0.0")]
+    [BepInPlugin("com.sotrando.graveyardkeeper.ap", "Graveyard Keeper Archipelago", "1.1.0")]
     public class Plugin : BaseUnityPlugin
     {
         public static bool Connected = false;
+        public static float ConnectedAt = 0f;
         public static HashSet<long> UnlockedIds = new HashSet<long>();
         public static HashSet<long> CheckedLocations = new HashSet<long>();
         public static ConcurrentQueue<string> Outgoing = new ConcurrentQueue<string>();
@@ -24,6 +25,8 @@ namespace GraveyardKeeperArchipelago
         public static MethodInfo AddMoneyMethod = null;
         public static int TechCounter = 0;
         public static int QuestCounter = 0;
+        public static float LastTechTime = -10f;
+        public static float LastQuestTime = -10f;
 
         private void Awake()
         {
@@ -39,26 +42,33 @@ namespace GraveyardKeeperArchipelago
                 var mTech = t.GetMethod("Flow_UnlockTech", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly);
                 if (mTech != null) harmony.Patch(mTech, postfix: new HarmonyMethod(typeof(Plugin), nameof(OnTechUnlocked)));
 
-                var mQuest = t.GetMethod("CheckQuestProgress", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly);
-                if (mQuest != null) harmony.Patch(mQuest, postfix: new HarmonyMethod(typeof(Plugin), nameof(OnQuestChecked)));
+                var mQuest = t.GetMethod("Flow_CompleteQuest", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static | BindingFlags.DeclaredOnly);
+                if (mQuest != null) harmony.Patch(mQuest, postfix: new HarmonyMethod(typeof(Plugin), nameof(OnQuestCompleted)));
 
                 var mMoney = t.GetMethod("Flow_AddMoney", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly);
                 if (mMoney != null && mMoney.GetParameters().Length >= 1) AddMoneyMethod = mMoney;
             }
-            Logger.LogInfo("Graveyard Keeper Archipelago loaded!");
+            Logger.LogInfo("Graveyard Keeper Archipelago 1.1.0 loaded!");
+        }
+
+        private static bool IsWarmup()
+        {
+            return !Connected || Time.timeSinceLevelLoad < 5f || (Time.unscaledTime - ConnectedAt) < 4f;
         }
 
         public static void OnTechUnlocked()
         {
-            if (!Connected) return;
+            if (IsWarmup() || Time.unscaledTime - LastTechTime < 1.5f) return;
+            LastTechTime = Time.unscaledTime;
             long id = 10000 + (TechCounter++ % 60);
             if (CheckedLocations.Add(id))
                 Outgoing.Enqueue("[{\"cmd\":\"LocationChecks\",\"locations\":[" + id + "]}]");
         }
 
-        public static void OnQuestChecked()
+        public static void OnQuestCompleted()
         {
-            if (!Connected) return;
+            if (IsWarmup() || Time.unscaledTime - LastQuestTime < 1.5f) return;
+            LastQuestTime = Time.unscaledTime;
             long id = 10100 + (QuestCounter++ % 45);
             if (CheckedLocations.Add(id))
                 Outgoing.Enqueue("[{\"cmd\":\"LocationChecks\",\"locations\":[" + id + "]}]");
@@ -69,7 +79,7 @@ namespace GraveyardKeeperArchipelago
     {
         private bool _showGui = true;
         private string _url = "ws://localhost:38281";
-        private string _slot = "Keeper";
+        private string _slot = "grave";
         private string _pass = "";
         private string _status = "Disconnected (F1 to toggle)";
 
@@ -110,7 +120,7 @@ namespace GraveyardKeeperArchipelago
                 if (!url.StartsWith("ws://") && !url.StartsWith("wss://")) url = "ws://" + url;
                 var ws = new ClientWebSocket();
                 await ws.ConnectAsync(new Uri(url), CancellationToken.None);
-                string pkt = "[{\"cmd\":\"Connect\",\"password\":\"" + pass + "\",\"game\":\"Graveyard Keeper\",\"name\":\"" + slot + "\",\"uuid\":\"gk-ap\",\"version\":{\"major\":0,\"minor\":5,\"build\":0,\"class\":\"Version\"},\"items_handling\":7,\"tags\":[\"AP\"]}]";
+                string pkt = "[{\"cmd\":\"Connect\",\"password\":\"" + pass + "\",\"game\":\"Graveyard Keeper\",\"name\":\"" + slot + "\",\"uuid\":\"gk-ap-v2\",\"version\":{\"major\":0,\"minor\":5,\"build\":0,\"class\":\"Version\"},\"items_handling\":7,\"tags\":[\"AP\"]}]";
                 await ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(pkt)), WebSocketMessageType.Text, true, CancellationToken.None);
 
                 _ = Task.Run(async () =>
@@ -134,7 +144,12 @@ namespace GraveyardKeeperArchipelago
                         sb.Append(Encoding.UTF8.GetString(buf, 0, res.Count));
                     } while (!res.EndOfMessage);
                     string raw = sb.ToString();
-                    if (raw.Contains("\"Connected\"")) { Plugin.Connected = true; _status = "Connected as " + slot + "!"; }
+                    if (raw.Contains("\"Connected\""))
+                    {
+                        Plugin.Connected = true;
+                        Plugin.ConnectedAt = Time.unscaledTime;
+                        _status = "Connected as " + slot + "!";
+                    }
                     if (raw.Contains("\"ReceivedItems\""))
                         foreach (Match m in Regex.Matches(raw, "\"item\"\\s*:\\s*(\\d+)"))
                             if (long.TryParse(m.Groups[1].Value, out long itemId))

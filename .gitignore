@@ -2,3 +2,5 @@
 /Randomizers/*/Plugin/obj/
 /Randomizers/*/Plugin/bin/
 /Randomizers/*/Plugin/*.csproj
+/Randomizers/GraveyardKeeper/Plugin/obj/
+/Randomizers/GraveyardKeeper/Plugin/bin/
