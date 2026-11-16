@@ -1,4 +1,7 @@
 /Unpacked Games/*
 /Randomizers/HouseFlipper/Plugin/bin/
 /Randomizers/HouseFlipper/Plugin/obj/
-Randomizers/HouseFlipper/Plugin/HouseFlipperArchipelago.csproj/
+/Randomizers/HouseFlipper/Plugin/HouseFlipperArchipelago.csproj
+/Randomizers/*/Plugin/*.csproj
+/Randomizers/*/Plugin/bin/
+/Randomizers/*/Plugin/obj/
