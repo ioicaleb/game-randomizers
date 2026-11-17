@@ -91,7 +91,7 @@ namespace HouseFlipperArchipelago
 
         private static bool IsGatedTool(int toolVal)
         {
-            return toolVal == 2 || toolVal == 4 || toolVal == 5 || toolVal == 6 || toolVal == 9 || toolVal == 10;
+            return toolVal == 2 || toolVal == 4 || toolVal == 5 || toolVal == 6 || toolVal == 7 || toolVal == 8 || toolVal == 9 || toolVal == 10;
         }
 
         public static bool BlockVanillaUnlock() => !Connected;
@@ -389,7 +389,7 @@ namespace HouseFlipperArchipelago
             if (itemId >= 20001 && itemId <= 20004) { ContractPermits = Math.Max(ContractPermits, (int)(itemId - 20000)); return; }
             if (itemId == 20010) { UnlockedToolEnums.Add(10); SyncUnlockedToolsToWheel(); return; }
             if (itemId == 20011) { UnlockedToolEnums.Add(2); SyncUnlockedToolsToWheel(); return; }
-            if (itemId == 20012) { UnlockedToolEnums.Add(9); SyncUnlockedToolsToWheel(); return; }
+            if (itemId == 20012) { UnlockedToolEnums.Add(7); UnlockedToolEnums.Add(8); UnlockedToolEnums.Add(9); SyncUnlockedToolsToWheel(); return; }
             if (itemId == 20013) { UnlockedToolEnums.Add(6); SyncUnlockedToolsToWheel(); return; }
             if (itemId == 20014) { UnlockedToolEnums.Add(4); UnlockedToolEnums.Add(5); SyncUnlockedToolsToWheel(); return; }
             if (itemId == 20060) { GrantCash(500.0); return; }
