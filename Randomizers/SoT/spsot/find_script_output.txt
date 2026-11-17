@@ -1,0 +1,28 @@
+scanned 7684 files (16674 skipped); 316 items are referenced outside the item/loot tables
+by pool: {'Armor': 85, 'Consumable': 10, 'Cosmetic': 31, 'Excluded': 39, 'QuestItem': 2, 'StrapOrPatch': 89, 'Weapon': 60}
+examples:
+   #64   Underpants                         QuestItem     global/mission_system/objectives.ogd
+   #93   Nazi Ring                          QuestItem     global/mission_system/objectives.ogd
+   #144  Paladin Butters                    Excluded      global/class_templates/class_templates.ogd
+   #145  Wizard King Cartman                Excluded      global/class_templates/class_templates.ogd
+   #146  Bard Jimmy                         Excluded      global/class_templates/class_templates.ogd
+   #147  Princess Kenny                     Excluded      global/class_templates/class_templates.ogd
+   #148  Druid Kyle                         Excluded      global/class_templates/class_templates.ogd
+   #149  Ranger Stan                        Excluded      global/class_templates/class_templates.ogd
+   #150  Butters' Hammer                    Excluded      global/class_templates/class_templates.ogd
+   #151  Cartman's Staff                    Excluded      global/class_templates/class_templates.ogd
+   #152  Jimmy's crossbow                   Excluded      global/class_templates/class_templates.ogd
+   #153  Kenny's Bow                        Excluded      global/class_templates/class_templates.ogd
+   #154  Kyle's Golf Club                   Excluded      global/class_templates/class_templates.ogd
+   #155  Stan's Sword                       Excluded      global/class_templates/class_templates.ogd
+   #156  Valkyrie Gloves                    Armor         global/loot_system/crafting_data.ogd
+   #157  Valkyrie Headband                  Armor         global/loot_system/crafting_data.ogd
+   #158  Valkyrie Armor                     Armor         global/loot_system/crafting_data.ogd
+   #160  Barbarian Gloves                   Armor         global/loot_system/crafting_data.ogd
+   #161  Barbarian Helmet                   Armor         global/loot_system/crafting_data.ogd
+   #162  Barbarian Armor                    Armor         global/loot_system/crafting_data.ogd
+   #163  Minstrel's Gloves                  Armor         global/loot_system/crafting_data.ogd
+   #164  Minstrel's Cap                     Armor         global/loot_system/crafting_data.ogd
+   #165  Jester's Cap                       Armor         global/loot_system/crafting_data.ogd
+   #166  Minstrel Uniform                   Armor         global/loot_system/crafting_data.ogd
+   #167  Stupid Spoiled Whore Gloves        Armor         global/world_map/world_map.ogd
