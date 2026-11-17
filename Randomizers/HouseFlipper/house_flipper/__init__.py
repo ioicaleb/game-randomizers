@@ -5,7 +5,6 @@ from .Options import HouseFlipperOptions
 from .Items import HouseFlipperItem, ITEM_TABLE
 from .Locations import HouseFlipperLocation, LOCATION_TABLE
 
-HOUSES = ['First Office', 'Abandoned House', 'Burned House', 'Hacker Loft', 'Samarta Myers House', 'Family House', 'Garden After Building', 'Just Married House', 'Pink Kingdom', 'Train Car', 'Man Cave', 'Uninhabited House', 'House on the Moon', 'Connoisseur House', 'Cache in a Bunker', '13th Floor', 'Castle', 'Cyberpunk Loft', 'Huckster House', 'Luxury Villa']
 PERKS = ['Progressive Fast Hands (Cleaning)', 'Progressive Long Distance', 'Progressive Eye of the Mother-in-Law', 'Progressive Tempo', 'Progressive Muscle', 'Progressive Bigger Hammer', 'Progressive Painting Base', 'Progressive Fast Hands (Painting)', 'Progressive Paint More', 'Progressive Fitter', 'Progressive Plasterer', 'Progressive Tiler', 'Progressive Bricklayer', 'Progressive Mason', 'Progressive Fixer', 'Progressive Negotiate Price', 'Progressive Faster Order', 'Progressive Higher Payment']
 
 class HouseFlipperWeb(WebWorld):
@@ -43,8 +42,8 @@ class HouseFlipperWorld(World):
         for loc_name, loc_id in LOCATION_TABLE.items():
             if loc_id < 10100: idx = loc_id - 10000
             elif loc_id < 10200: idx = loc_id - 10100
-            elif loc_id < 10300: idx = (loc_id - 10200) * 20 // 30
-            else: idx = (loc_id - 10300) * 20 // 15
+            elif loc_id < 10300: idx = (loc_id - 10200) * 20 // 35
+            else: idx = (loc_id - 10300) * 20 // 30
             if idx < 4: reg = t0
             elif idx < 8: reg = t1
             elif idx < 12: reg = t2
@@ -66,8 +65,8 @@ class HouseFlipperWorld(World):
         for p in PERKS:
             for _ in range(3):
                 pool.append(self.create_item(p))
-        for h in HOUSES:
-            pool.append(self.create_item(f"Deed: {h}"))
+        for i in range(40):
+            pool.append(self.create_item(f"Property Deed #{i+1:02d}"))
 
         total = len(self.multiworld.get_locations(self.player))
         fillers = ["Contractor Voucher (+$500)", "Client Bonus (+$1,500)", "Renovation Grant (+$5,000)"]
@@ -77,7 +76,7 @@ class HouseFlipperWorld(World):
 
     def set_rules(self) -> None:
         if self.options.goal.value == 2:
-            self.multiworld.completion_condition[self.player] = lambda state: all(state.has(f"Deed: {h}", self.player) for h in HOUSES)
+            self.multiworld.completion_condition[self.player] = lambda state: all(state.has(f"Property Deed #{i+1:02d}", self.player) for i in range(40))
         else:
             self.multiworld.completion_condition[self.player] = lambda state: state.has("Tier 4 Contract Permit", self.player)
 

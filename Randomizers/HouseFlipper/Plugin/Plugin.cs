@@ -91,7 +91,7 @@ namespace HouseFlipperArchipelago
 
         private static bool IsGatedTool(int toolVal)
         {
-            return toolVal == 2 || toolVal == 4 || toolVal == 5 || toolVal == 6 || toolVal == 7 || toolVal == 8 || toolVal == 9 || toolVal == 10;
+            return toolVal == 2 || toolVal == 4 || toolVal == 5 || toolVal == 6 || toolVal == 7 || toolVal == 8 || toolVal == 9 || toolVal == 10 || toolVal == 11;
         }
 
         public static bool BlockVanillaUnlock() => !Connected;
@@ -155,7 +155,7 @@ namespace HouseFlipperArchipelago
         public static void OnHouseSold()
         {
             if (Time.timeSinceLevelLoad < 5f) return;
-            SendCheck(10300 + (OrderCheckCounter % 15));
+            SendCheck(10300 + (OrderCheckCounter % 30));
         }
 
         private static object GetLivePlayerProgress()
@@ -273,7 +273,7 @@ namespace HouseFlipperArchipelago
             if (!Connected || GoalSent) return;
             bool won = (GoalMode == 0 && GetCurrentNetWorth() >= NetWorthTarget) ||
                        (GoalMode == 1 && OrderCheckCounter >= ContractsToWin) ||
-                       (GoalMode == 2 && UnlockedDeedIndices.Count >= 20);
+                       (GoalMode == 2 && UnlockedDeedIndices.Count >= 40);
             if (won)
             {
                 GoalSent = true;
@@ -282,11 +282,47 @@ namespace HouseFlipperArchipelago
             }
         }
 
+        private static List<string> _cachedAllHouseScenes = null;
+
+        private static List<string> GetAllHouseScenes()
+        {
+            if (_cachedAllHouseScenes != null && _cachedAllHouseScenes.Count > 0) return _cachedAllHouseScenes;
+            var asm = Assembly.Load("Assembly-CSharp");
+            var hiType = asm.GetTypes().FirstOrDefault(x => x.Name == "HouseInfo");
+            if (hiType == null) return new List<string>();
+
+            var mailF = hiType.GetField("isMailOrder", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var useF = hiType.GetField("useInGame", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var ordF = hiType.GetField("order", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var baseF = hiType.GetField("baseScene", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+            var list = new List<(int ord, string scene)>();
+            foreach (var obj in Resources.FindObjectsOfTypeAll(hiType))
+            {
+                if (obj == null) continue;
+                bool isMail = mailF != null && (bool)mailF.GetValue(obj);
+                bool useGame = useF == null || (bool)useF.GetValue(obj);
+                if (isMail || !useGame) continue;
+                var scObj = baseF?.GetValue(obj) as UnityEngine.Object;
+                if (scObj != null && !string.IsNullOrEmpty(scObj.name))
+                {
+                    int ord = ordF != null ? (int)ordF.GetValue(obj) : 0;
+                    list.Add((ord, scObj.name));
+                }
+            }
+            _cachedAllHouseScenes = list.OrderBy(x => x.ord).Select(x => x.scene).Distinct().ToList();
+            return _cachedAllHouseScenes;
+        }
+
         private void EnforceHouseGates()
         {
             if (!Connected) return;
             var progObj = GetLivePlayerProgress();
             if (progObj == null) return;
+
+            var allScenes = GetAllHouseScenes();
+            if (allScenes.Count == 0) return;
+
             var hpField = progObj.GetType().GetField("housesProgress", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             var hpObj = hpField?.GetValue(progObj);
             var mBuy = hpObj?.GetType().GetMethod("MarkAsBought", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -295,9 +331,9 @@ namespace HouseFlipperArchipelago
 
             foreach (int dIdx in UnlockedDeedIndices)
             {
-                if (dIdx >= 0 && dIdx < HouseSceneIds.Length)
+                if (dIdx >= 0 && dIdx < allScenes.Count)
                 {
-                    string sceneName = HouseSceneIds[dIdx];
+                    string sceneName = allScenes[dIdx];
                     if (boughtList != null && !boughtList.Contains(sceneName) && mBuy != null)
                         mBuy.Invoke(hpObj, new object[] { sceneName });
                 }
@@ -307,8 +343,8 @@ namespace HouseFlipperArchipelago
             if (housesField?.GetValue(progObj) is HashSet<string> houseSet)
             {
                 foreach (int dIdx in UnlockedDeedIndices)
-                    if (dIdx >= 0 && dIdx < HouseSceneIds.Length)
-                        houseSet.Add(HouseSceneIds[dIdx]);
+                    if (dIdx >= 0 && dIdx < allScenes.Count)
+                        houseSet.Add(allScenes[dIdx]);
                 while (houseSet.Count > UnlockedDeedIndices.Count)
                     houseSet.Remove(houseSet.Last());
             }
@@ -353,7 +389,7 @@ namespace HouseFlipperArchipelago
                             var cfgField = cat.GetType().GetField("skillProgressConfiguration", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                             var cfgObj = cfgField?.GetValue(cat);
                             if (cfgObj != null) ScaleConfigFields(cfgObj, 2.2f);
-                            SendCheck(10200 + (PerkCheckCounter++ % 30));
+                            SendCheck(10200 + (PerkCheckCounter++ % 35));
                         }
                     }
                 }
@@ -387,7 +423,7 @@ namespace HouseFlipperArchipelago
         {
             TotalItemsReceived++;
             if (itemId >= 20001 && itemId <= 20004) { ContractPermits = Math.Max(ContractPermits, (int)(itemId - 20000)); return; }
-            if (itemId == 20010) { UnlockedToolEnums.Add(10); SyncUnlockedToolsToWheel(); return; }
+            if (itemId == 20010) { UnlockedToolEnums.Add(10); UnlockedToolEnums.Add(11); SyncUnlockedToolsToWheel(); return; }
             if (itemId == 20011) { UnlockedToolEnums.Add(2); SyncUnlockedToolsToWheel(); return; }
             if (itemId == 20012) { UnlockedToolEnums.Add(7); UnlockedToolEnums.Add(8); UnlockedToolEnums.Add(9); SyncUnlockedToolsToWheel(); return; }
             if (itemId == 20013) { UnlockedToolEnums.Add(6); SyncUnlockedToolsToWheel(); return; }
@@ -395,7 +431,7 @@ namespace HouseFlipperArchipelago
             if (itemId == 20060) { GrantCash(500.0); return; }
             if (itemId == 20061) { GrantCash(1500.0); return; }
             if (itemId == 20062) { GrantCash(5000.0); return; }
-            if (itemId >= 20070 && itemId <= 20089) { UnlockedDeedIndices.Add((int)(itemId - 20070)); EnforceHouseGates(); return; }
+            if (itemId >= 20070 && itemId <= 20109) { UnlockedDeedIndices.Add((int)(itemId - 20070)); EnforceHouseGates(); return; }
 
             int pIdx = (int)(itemId - 20020);
             if (pIdx >= 0 && pIdx < PerkTargets.Length)
@@ -426,7 +462,7 @@ namespace HouseFlipperArchipelago
             float rx = Screen.width - 315f;
             GUI.Box(new Rect(rx, 15, 300, 102), "Archipelago Goal Progress");
             GUI.Label(new Rect(rx + 12, 38, 276, 22), GetGoalProgressText());
-            GUI.Label(new Rect(rx + 12, 60, 276, 22), $"Deeds: {UnlockedDeedIndices.Count}/20 | Permits: Tier {ContractPermits}/4");
+            GUI.Label(new Rect(rx + 12, 60, 276, 22), $"Deeds: {UnlockedDeedIndices.Count}/40 | Permits: Tier {ContractPermits}/4");
             GUI.Label(new Rect(rx + 12, 82, 276, 22), $"AP Items Received: {TotalItemsReceived}");
 
             if (!_showConnGui) return;
