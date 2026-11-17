@@ -3,5 +3,5 @@
 /Randomizers/*/Plugin/bin/
 /Randomizers/*/obj/
 /Randomizers/*/bin/
-/Randomizers/*/.net10.0/
+/Randomizers/*/net10.0/
 /Randomizers/*/Plugin/*.csproj
