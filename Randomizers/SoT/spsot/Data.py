@@ -8,6 +8,11 @@ from .Friends import FRIEND_LIST
 
 _rules = json.loads(pkgutil.get_data(__name__, "logic_rules.json").decode("utf-8-sig"))
 _unlock = json.loads(pkgutil.get_data(__name__, "unlock_map.json").decode("utf-8-sig"))
+try:                                                # optional: items the game's own scripts reference
+    SCRIPT_REFERENCED = {int(k) for k in json.loads(
+        pkgutil.get_data(__name__, "script_items.json").decode("utf-8-sig"))["referenced"]}
+except (OSError, ValueError, KeyError):
+    SCRIPT_REFERENCED = set()
 START_OWNED = set(_unlock["start_owned"])          # unlocks you already own in a new game: never checkable
 _UNLOCK_BY_INDEX = {int(k): v["hash"] for k, v in _unlock["unlocks"].items()}
 
@@ -26,6 +31,12 @@ USEFUL_POOLS = {"Chinpokomon", "Weapon", "Armor", "StrapOrPatch"}
 # Clyde tutorial and then removes the tutorial weapon. If they are shuffled the player can end up with
 # no weapon (soft lock), so they always stay vanilla.
 ALWAYS_VANILLA_ITEM_INDICES = {917, 918, 919, 927, 928, 929, 937, 938, 939, 947, 948, 949}
+
+# Tier-1 gear of each class (Fighter / Jew / Mage / Thief: gloves-or-ring, headgear, body). Your own save shows the
+# Warrior set (#198, #202, #206) was owned very early, and the game equips the starting kit by hash; if that data is
+# swapped for a different kind of item, combat can fail to start. Like the class weapons, they stay vanilla.
+CLASS_STARTER_GEAR = {198, 202, 206, 228, 232, 236, 249, 253, 257, 307, 311, 315}
+ALWAYS_VANILLA_ITEM_INDICES |= CLASS_STARTER_GEAR
 
 # Jimbo's Big Game Hunter baits (Cow Bell, Moldy Sausage, ...) are normal deliverable items now: the client
 # patches his dialogue so he stops handing them out, and the AP item grants the unlock instead.
@@ -65,6 +76,8 @@ def _load() -> List[ItemData]:
             continue                      # two items claiming the same unlock: keep the first, rest stay vanilla
         if i["Pool"] in QUEST_POOLS and unlock is None and i["Name"] not in LOGIC_ITEMS:
             continue                      # cannot be delivered and not needed for logic: stays vanilla
+        if unlock is None and idx in SCRIPT_REFERENCED and i["Pool"] not in QUEST_POOLS:
+            continue                      # a script equips / gives / removes this item: leave it exactly as it is
         if unlock is not None:
             used_unlocks.add(unlock)
         chosen.append((i, unlock))

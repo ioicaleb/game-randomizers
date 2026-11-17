@@ -12,6 +12,25 @@ from .Locations import SouthParkSoTLocation, location_name_to_id
 from .Options import SouthParkSoTOptions
 
 
+# ---- Archipelago Launcher entry: shows "South Park SoT Client" in the launcher's client list ----
+try:
+    from worlds.LauncherComponents import Component, Type, components, launch_subprocess
+
+    def _client_main(*args):
+        from .Client import launch
+        launch(*args)
+
+    def _launch_client(*args):
+        try:
+            launch_subprocess(_client_main, name="South Park SoT Client", args=args)
+        except TypeError:                       # older Archipelago versions have no `args` parameter
+            launch_subprocess(_client_main, name="South Park SoT Client")
+
+    components.append(Component("South Park SoT Client", func=_launch_client, component_type=Type.CLIENT))
+except Exception:                               # tests / very old versions: the world still works without it
+    pass
+
+
 class SouthParkSoTWeb(WebWorld):
     theme = "grass"
     tutorials = [Tutorial(
