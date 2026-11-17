@@ -2,5 +2,6 @@
 Randomizers/*/bin/
 Randomizers/*/obj/
 Randomizers/*/net10.0/
-Randomizers/*/Plugin/bin
-Randomizers/*/Plugin/obj
+/Randomizers/*/Plugin/*.csproj
+/Randomizers/*/Plugin/bin/
+/Randomizers/*/Plugin/obj/
