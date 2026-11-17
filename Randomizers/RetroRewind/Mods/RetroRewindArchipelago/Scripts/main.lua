@@ -4,6 +4,10 @@ os.execute('mkdir "' .. BridgeDir .. '" 2>NUL')
 local AutoChangeEnabled = true
 local AutoSortReturnsEnabled = true
 local ArmCarryLimit = 20
+local AllowedMovieGenres = { [4] = true, [5] = true }
+local AllowedGameGenres = {}
+local AllowedSystems = {}
+local UnlockNewReleases = false
 local UnlockCheckIdx = 0
 local QuestCheckIdx = 0
 local HooksInstalled = false
@@ -31,7 +35,7 @@ local function ReadConfig()
     end
 end
 
-local function EnforceQoL()
+local function EnforceLocksAndQoL()
     local pc = FindFirstOf("PlayerController")
     if pc and pc:IsValid() and pc.Pawn and pc.Pawn:IsValid() then
         local pawn = pc.Pawn
@@ -39,19 +43,65 @@ local function EnforceQoL()
         pcall(function() pawn["Inventory Max Misc Object Hold size"] = ArmCarryLimit end)
         pcall(function() pawn["Inventory Max Electronics Object Hold size"] = ArmCarryLimit end)
     end
+
     local sys = FindFirstOf("Unlockable_System_C")
     if sys and sys:IsValid() then
         pcall(function() sys["Player Personnal Inventory Size"] = ArmCarryLimit end)
+        pcall(function() sys["New Released Unlock"] = UnlockNewReleases end)
+        pcall(function() sys["Video Game New Released Unlock"] = UnlockNewReleases end)
+
+        -- Sync allowed Movie Genres into Movie Genres Unlock array
+        pcall(function()
+            local mg = sys["Movie Genres Unlock"]
+            if mg and mg.Empty and mg.Add then
+                mg:Empty()
+                for gId, ok in pairs(AllowedMovieGenres) do
+                    if ok then mg:Add(gId) end
+                end
+            end
+        end)
+
+        -- Sync allowed Video Game Genres into Video Game Genres Unlock array
+        pcall(function()
+            local vg = sys["Video Game Genres Unlock"]
+            if vg and vg.Empty and vg.Add then
+                vg:Empty()
+                for gId, ok in pairs(AllowedGameGenres) do
+                    if ok then vg:Add(gId) end
+                end
+            end
+        end)
+
+        -- Sync allowed Systems / Furniture / Staff / Upgrades in Unlock Gameplay System map
+        pcall(function()
+            local gs = sys["Unlock Gameplay System"]
+            if gs and gs.ForEach then
+                gs:ForEach(function(k, v)
+                    local key = k:get()
+                    v:set(AllowedSystems[key] == true)
+                end)
+            end
+        end)
     end
 end
 
 local function ApplyApUnlock(itemId)
     local sys = FindFirstOf("Unlockable_System_C")
-    if not sys or not sys:IsValid() then return end
-    if itemId >= 20010 and itemId <= 20019 then
-        pcall(function() sys["Force Unlock Genre"](sys, itemId - 20010) end)
+    if itemId == 20019 then
+        UnlockNewReleases = true
+    elseif itemId >= 20010 and itemId <= 20018 then
+        local gIdx = itemId - 20010
+        AllowedMovieGenres[gIdx] = true
+        AllowedGameGenres[gIdx] = true
+        if sys and sys:IsValid() then
+            pcall(function() sys["Force Unlock Genre"](sys, gIdx) end)
+        end
     else
-        pcall(function() sys["Force Unlock Gameplay System"](sys, (itemId % 100) + 1) end)
+        local sIdx = (itemId % 100) + 1
+        AllowedSystems[sIdx] = true
+        if sys and sys:IsValid() then
+            pcall(function() sys["Force Unlock Gameplay System"](sys, sIdx) end)
+        end
     end
 end
 
@@ -67,6 +117,7 @@ local function PollInbox()
             local itemId = tonumber(line)
             if itemId then ApplyApUnlock(itemId) end
         end
+        EnforceLocksAndQoL()
     end
 end
 
@@ -120,6 +171,13 @@ local function InstallHooks()
         RegisterHook("/Game/VideoStore/core/blueprint/research/Unlockable_System.Unlockable_System_C:TryUnlock", function(Context)
             SendCheck(10200 + (UnlockCheckIdx % 20))
             UnlockCheckIdx = UnlockCheckIdx + 1
+            ExecuteWithDelay(100, EnforceLocksAndQoL)
+        end)
+    end)
+
+    pcall(function()
+        RegisterHook("/Game/VideoStore/core/blueprint/research/Unlockable_System.Unlockable_System_C:Check Load Unlock With Level When Savegame Loaded", function(Context)
+            ExecuteWithDelay(200, EnforceLocksAndQoL)
         end)
     end)
 
@@ -133,25 +191,21 @@ local function InstallHooks()
     end
 end
 
--- In-game hotkeys to toggle QoL features live on/off at any time
 RegisterKeyBind(Key.F6, function()
     AutoChangeEnabled = not AutoChangeEnabled
-    print("[RetroRewindAP] Auto-Change: " .. tostring(AutoChangeEnabled))
 end)
 RegisterKeyBind(Key.F7, function()
     AutoSortReturnsEnabled = not AutoSortReturnsEnabled
-    print("[RetroRewindAP] Auto-Sort Returns: " .. tostring(AutoSortReturnsEnabled))
 end)
 RegisterKeyBind(Key.F8, function()
     ArmCarryLimit = (ArmCarryLimit == 5) and 20 or 5
-    EnforceQoL()
-    print("[RetroRewindAP] Arm Carry Limit: " .. tostring(ArmCarryLimit))
+    EnforceLocksAndQoL()
 end)
 
 LoopAsync(1500, function()
     ReadConfig()
     InstallHooks()
-    EnforceQoL()
     PollInbox()
+    EnforceLocksAndQoL()
     return false
 end)

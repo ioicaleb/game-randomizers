@@ -86,10 +86,10 @@ class RetroRewindWorld(World):
         }
 
 
-def _launch_retro_rewind_client(*args):
-    import subprocess, sys
-    client_py = "/mnt/E8A2D79FA2D77114/Source/repos/GameRandomizers/Randomizers/RetroRewind/rr_client.py"
-    subprocess.Popen([sys.executable, client_py, *args])
+def _launch_retro_rewind_client(*args: str) -> None:
+    from worlds.LauncherComponents import launch as launch_component
+    from .Client import launch
+    launch_component(launch, name="RetroRewindClient", args=args)
 
 try:
     from worlds.LauncherComponents import Component, components, Type
