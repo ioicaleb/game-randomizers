@@ -4,13 +4,14 @@ os.execute('mkdir "' .. BridgeDir .. '" 2>NUL')
 local AutoChangeEnabled = true
 local AutoSortReturnsEnabled = true
 local ArmCarryLimit = 20
-local AllowedMovieGenres = { [4] = true, [5] = true }
+local AllowedMovieGenres = {}
 local AllowedGameGenres = {}
 local AllowedSystems = {}
+local UnlockedCatalogKeys = {}
 local UnlockNewReleases = false
 local UnlockCheckIdx = 0
-local QuestCheckIdx = 0
 local HooksInstalled = false
+local StartGenresLoaded = false
 
 local function SendCheck(locId)
     local f = io.open(BridgeDir .. "outbox.txt", "a")
@@ -28,14 +29,54 @@ local function ReadConfig()
     if content then
         local ac = content:match("auto_change=(%d+)")
         local as = content:match("auto_sort_returns=(%d+)")
-        local al = content:match("arm_carry_limit=(%d+)")
+        local al = content:match("arm_carry_limit=(%d+)")        local sg = content:match("starting_genres=(%d+,%d+)")
         if ac then AutoChangeEnabled = (tonumber(ac) == 1) end
         if as then AutoSortReturnsEnabled = (tonumber(as) == 1) end
-        if al then ArmCarryLimit = tonumber(al) end
+        if al then ArmCarryLimit = tonumber(al) end        if sg and not StartGenresLoaded then
+            StartGenresLoaded = true
+            AllowedMovieGenres = {}
+            AllowedGameGenres = {}
+            for num in sg:gmatch("%d+") do
+                local g = tonumber(num)
+                if g then
+                    AllowedMovieGenres[g] = true
+                    AllowedGameGenres[g] = true
+                end
+            end
+        end
     end
 end
 
+
+local function GateSingleCatalogCard(card)
+    if not card or not card:IsValid() then return end
+    local cname = ""
+    local ok1, c1 = pcall(function() return card["Spawn Class Actor"] end)
+    if ok1 and c1 and c1:IsValid() then cname = cname .. " " .. c1:GetFullName():lower() end
+    local ok2, c2 = pcall(function() return card["Product Class"] end)
+    if ok2 and c2 and c2:IsValid() then cname = cname .. " " .. c2:GetFullName():lower() end
+    if cname:find("shelf_movie_4row_01") or cname:find("movingbox") then return end
+    local key = tostring((#cname + 7) % 35)
+    local allowed = (UnlockedCatalogKeys[key] == true)
+    pcall(function()
+        if card["div_unlock"] and card["div_unlock"]:IsValid() then card["div_unlock"]:SetVisibility(1) end
+        if card["txt_Unlock"] and card["txt_Unlock"]:IsValid() then card["txt_Unlock"]:SetVisibility(1) end
+        local buyBtn = card["UI_Catalogue_ButtonBuy"]
+        if buyBtn and buyBtn:IsValid() then
+            buyBtn:SetIsEnabled(allowed)
+            buyBtn:SetVisibility(allowed and 0 or 2)
+        end
+    end)
+end
+
 local function EnforceLocksAndQoL()
+    local mkt = FindFirstOf("Market_C")
+    if not mkt or not mkt:IsValid() then return end
+    if not StartGenresLoaded then
+        AllowedMovieGenres = true
+        AllowedMovieGenres = true
+    end
+
     local pc = FindFirstOf("PlayerController")
     if pc and pc:IsValid() and pc.Pawn and pc.Pawn:IsValid() then
         local pawn = pc.Pawn
@@ -50,29 +91,7 @@ local function EnforceLocksAndQoL()
         pcall(function() sys["New Released Unlock"] = UnlockNewReleases end)
         pcall(function() sys["Video Game New Released Unlock"] = UnlockNewReleases end)
 
-        -- Sync allowed Movie Genres into Movie Genres Unlock array
-        pcall(function()
-            local mg = sys["Movie Genres Unlock"]
-            if mg and mg.Empty and mg.Add then
-                mg:Empty()
-                for gId, ok in pairs(AllowedMovieGenres) do
-                    if ok then mg:Add(gId) end
-                end
-            end
-        end)
-
-        -- Sync allowed Video Game Genres into Video Game Genres Unlock array
-        pcall(function()
-            local vg = sys["Video Game Genres Unlock"]
-            if vg and vg.Empty and vg.Add then
-                vg:Empty()
-                for gId, ok in pairs(AllowedGameGenres) do
-                    if ok then vg:Add(gId) end
-                end
-            end
-        end)
-
-        -- Sync allowed Systems / Furniture / Staff / Upgrades in Unlock Gameplay System map
+        -- Gate Stations & Gameplay Systems behind AP items (prevents vanilla level-up unlocks!)
         pcall(function()
             local gs = sys["Unlock Gameplay System"]
             if gs and gs.ForEach then
@@ -82,6 +101,42 @@ local function EnforceLocksAndQoL()
                 end)
             end
         end)
+
+        -- Enforce 2 shuffled starting genres + AP unlocked genres
+        pcall(function()
+            local list = {}
+            for gId, ok in pairs(AllowedMovieGenres) do
+                if ok then table.insert(list, gId) end
+            end
+            table.sort(list)
+            local mg = sys["Movie Genres Unlock"]
+            if mg and #list > 0 and mg.ForEach then
+                local n = mg:GetArrayNum()
+                mg:ForEach(function(i, elem)
+                    if list[i] ~= nil then elem:set(list[i]) end
+                end)
+                for i = n + 1, #list do
+                    pcall(function() sys["Force Unlock Genre"](sys, list[i]) end)
+                end
+            end
+        end)
+    end
+
+    local cards = FindAllOf("UI_Catalogue_Product_C")
+    if cards then
+        for _, card in ipairs(cards) do
+            GateSingleCatalogCard(card)
+        end
+    end
+
+    local staffBtns = FindAllOf("UI_Catalogue_ButtonHireStaff_C")
+    if staffBtns then
+        for idx, btn in ipairs(staffBtns) do
+            if btn:IsValid() then
+                local unlocked = UnlockedCatalogKeys["staff_" .. tostring(idx)] == true
+                pcall(function() btn:SetIsEnabled(unlocked) end)
+            end
+        end
     end
 end
 
@@ -96,11 +151,16 @@ local function ApplyApUnlock(itemId)
         if sys and sys:IsValid() then
             pcall(function() sys["Force Unlock Genre"](sys, gIdx) end)
         end
+    elseif itemId >= 20060 and itemId <= 20065 then
+        local staffSlot = (itemId - 20060) + 1
+        UnlockedCatalogKeys["staff_" .. tostring(staffSlot)] = true
     else
-        local sIdx = (itemId % 100) + 1
-        AllowedSystems[sIdx] = true
+        local key = tostring(itemId % 35)
+        UnlockedCatalogKeys[key] = true
+        local sysSlot = (itemId % 16)
+        AllowedSystems[sysSlot] = true
         if sys and sys:IsValid() then
-            pcall(function() sys["Force Unlock Gameplay System"](sys, sIdx) end)
+            pcall(function() sys["Force Unlock Gameplay System"](sys, sysSlot) end)
         end
     end
 end
@@ -113,7 +173,7 @@ local function PollInbox()
     if content and #content > 0 then
         local clear = io.open(BridgeDir .. "inbox.txt", "w")
         if clear then clear:close() end
-        for line in content:gmatch("[^\r\n]+") do
+        for line in content:gmatch("%d+") do
             local itemId = tonumber(line)
             if itemId then ApplyApUnlock(itemId) end
         end
@@ -124,11 +184,32 @@ end
 local function InstallHooks()
     if HooksInstalled then return end
     local coCls = StaticFindObject("/Game/VideoStore/asset/prop/CheckOut/CheckOut.CheckOut_C")
-    local usCls = StaticFindObject("/Game/VideoStore/core/blueprint/research/Unlockable_System.Unlockable_System_C")
-    local dbCls = StaticFindObject("/Game/VideoStore/asset/prop/DropBox/DropBox.DropBox_C")
+    local usCls = StaticFindObject("/Game/VideoStore/core/blueprint/research/Unlockable_System.Unlockable_System_C")    local prodCls = StaticFindObject("/Game/VideoStore/asset/prop/catalogue/UI_Catalogue_Product.UI_Catalogue_Product_C")
     local qmCls = StaticFindObject("/Game/VideoStore/core/blueprint/quest/Quest_Manager.Quest_Manager_C")
     if not coCls or not usCls then return end
     HooksInstalled = true
+    if qmCls then
+        pcall(function()
+            RegisterHook("/Game/VideoStore/core/blueprint/quest/Quest_Manager.Quest_Manager_C:Load", function(Context)
+                local qm = Context:get()
+                if qm and qm:IsValid() then
+                    pcall(function()
+                        local qd = qm["Quest Done"]
+                        if qd and qd.Empty then qd:Empty() end
+                    end)
+                end
+            end)
+        end)
+    end
+
+    if prodCls then
+        pcall(function()
+            RegisterHook("/Game/VideoStore/asset/prop/catalogue/UI_Catalogue_Product.UI_Catalogue_Product_C:Construct", function(Context)
+                local card = Context:get()
+                ExecuteWithDelay(50, function() GateSingleCatalogCard(card) end)
+            end)
+        end)
+    end
 
     pcall(function()
         RegisterHook("/Game/VideoStore/asset/prop/CheckOut/CheckOut.CheckOut_C:Receive Client Money", function(Context)
@@ -142,30 +223,12 @@ local function InstallHooks()
                         co["User can close the Cash Drawer"] = true
                         co["Refresh Display"](co)
                         co["Check if Payback Money is correct and set final transaction interaction"](co)
-                        co["Close Cash Drawer"](co)
+                        co["Checkout Close Drawer Trigger - Pickup Event"](co)
                     end)
                 end)
             end
         end)
     end)
-
-    if dbCls then
-        pcall(function()
-            RegisterHook("/Game/VideoStore/asset/prop/DropBox/DropBox.DropBox_C:Event Move Animation Completed for Storage in DropBox", function(Context)
-                if not AutoSortReturnsEnabled then return end
-                local db = Context:get()
-                if db and db:IsValid() then
-                    ExecuteWithDelay(300, function()
-                        if not db:IsValid() then return end
-                        pcall(function()
-                            db["Check if any Shelve can store Product"](db)
-                            db["Move Product to Shelve Animation"](db)
-                        end)
-                    end)
-                end
-            end)
-        end)
-    end
 
     pcall(function()
         RegisterHook("/Game/VideoStore/core/blueprint/research/Unlockable_System.Unlockable_System_C:TryUnlock", function(Context)
@@ -180,23 +243,10 @@ local function InstallHooks()
             ExecuteWithDelay(200, EnforceLocksAndQoL)
         end)
     end)
-
-    if qmCls then
-        pcall(function()
-            RegisterHook("/Game/VideoStore/core/blueprint/quest/Quest_Manager.Quest_Manager_C:Save", function(Context)
-                SendCheck(10100 + (QuestCheckIdx % 25))
-                QuestCheckIdx = QuestCheckIdx + 1
-            end)
-        end)
-    end
 end
 
-RegisterKeyBind(Key.F6, function()
-    AutoChangeEnabled = not AutoChangeEnabled
-end)
-RegisterKeyBind(Key.F7, function()
-    AutoSortReturnsEnabled = not AutoSortReturnsEnabled
-end)
+RegisterKeyBind(Key.F6, function() AutoChangeEnabled = not AutoChangeEnabled end)
+RegisterKeyBind(Key.F7, function() AutoSortReturnsEnabled = not AutoSortReturnsEnabled end)
 RegisterKeyBind(Key.F8, function()
     ArmCarryLimit = (ArmCarryLimit == 5) and 20 or 5
     EnforceLocksAndQoL()
@@ -208,4 +258,26 @@ LoopAsync(1500, function()
     PollInbox()
     EnforceLocksAndQoL()
     return false
+end)
+
+
+
+local MarketRefreshed = false
+local function RefreshMarketForShuffledGenres()
+    if MarketRefreshed or not StartGenresLoaded then return end
+    local mkt = FindFirstOf("Market_C")
+    if mkt and mkt:IsValid() then
+        MarketRefreshed = true
+        pcall(function()
+            mkt["Clear Market"](mkt)
+            mkt["Generate Movie For The Day"](mkt)
+            mkt["Generate Movie Bundles ForThe Day"](mkt)
+        end)
+    end
+end
+
+
+LoopAsync(2500, function()
+    RefreshMarketForShuffledGenres()
+    return MarketRefreshed
 end)
